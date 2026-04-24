@@ -1,15 +1,16 @@
-# 🐍 TTS Service (FastAPI) — Feature Documentation
+# TTS Service (FastAPI) — Feature Documentation
 
-> **Service Role:** Stateless batch audio generation engine with job tracking  
-> **Stack:** Python · FastAPI · MongoDB · Local Filesystem  
-> **Version:** MVP 1.0
+> **Service Role:** Stateless batch audio generation engine with job tracking
+> **Stack:** Python · FastAPI · MongoDB · ElevenLabs SDK
+> **Port:** 8081
+> **Version:** MVP 1.0 — implemented
 
 ---
 
 ## Table of Contents
 
 1. [Service Overview](#service-overview)
-2. [Voice Module (CRUD)](#voice-module-crud)
+2. [Voice Module](#voice-module)
 3. [Audio Generation Module](#audio-generation-module)
 4. [Internal Processing Flow](#internal-processing-flow)
 5. [Storage Strategy](#storage-strategy)
@@ -25,49 +26,61 @@ The TTS Service does exactly **two things**:
 
 | Responsibility | Description |
 |---------------|-------------|
-| 🎤 Voice Registry | CRUD management of available TTS voices (admin-only) |
-| 🔊 Audio Generation Engine | Converts structured text segments into audio files asynchronously |
+| Voice Registry | Proxies the ElevenLabs voices API and returns normalized voice objects |
+| Audio Generation Engine | Converts structured text segments into MP3 files asynchronously |
 
 ### Mental Model
 
 > **"A batch audio renderer with a job tracker."**
 
-This service is not a streaming engine, not an AI assistant, and not a real-time synthesizer. It receives a batch of text segments, generates audio for each one, and makes the results available for polling.
+This service is not a streaming engine, not an AI assistant, and not a real-time synthesizer. It receives a batch of text segments, generates audio for each one via ElevenLabs, and makes the results available for polling.
 
 ---
 
-## Voice Module (CRUD)
+## Voice Module
 
 ### Purpose
 
-The Voice Module is a **stable mapping layer** between your internal system and the external TTS provider. It is not modeling AI behavior — it is modeling a registry abstraction so that the rest of the system never references a provider's raw voice IDs directly.
+The Voice Module is a **normalized interface** over the ElevenLabs voice catalog. `GET /voices` calls ElevenLabs live and returns every voice in a consistent internal format. No static list is seeded or maintained locally.
 
 ### Voice Data Model
 
 ```json
 {
-  "id": "eleven_voice_001",
-  "slug": "calm_female",
-  "friendly_name": "Calm Female Narrator",
-  "description": "Soft, neutral female narration voice"
+  "id": "EXAVITQu4vr4xnSDxMaL",
+  "slug": "sarah",
+  "friendlyName": "Sarah",
+  "description": "Mature, reassuring, confident"
 }
 ```
 
-| Field | Description |
-|-------|-------------|
-| `id` | **Must match the TTS provider's voice ID exactly** — this is a hard constraint |
-| `slug` | Internal human-readable identifier |
-| `friendly_name` | Display name shown in the UI |
-| `description` | Optional metadata |
+| Field | Source |
+|-------|--------|
+| `id` | ElevenLabs `voice_id` — passed as-is to the TTS API |
+| `slug` | Derived from voice name: lowercased, spaces → underscores |
+| `friendlyName` | ElevenLabs voice `name` |
+| `description` | ElevenLabs `labels.description` (empty string if absent) |
 
-> ⚠️ **Critical constraint:** `id` is not a generated UUID. It must equal the provider's voice ID (e.g., ElevenLabs voice ID). All other fields are metadata only.
+> **Critical constraint:** `id` must equal the ElevenLabs `voice_id`. All other fields are metadata derived from the ElevenLabs response.
 
-### Access Control
+### Language Filtering
 
-| Operation | Who |
-|-----------|-----|
-| Create, Update, Delete | `SUPERADMIN` only |
-| List / Read | All authenticated users (internal use) |
+The `GET /voices` endpoint accepts an optional `?language=` query param (BCP-47 code). When provided, the request is routed through ElevenLabs' v2 search API which filters server-side.
+
+```
+GET /voices              → all voices
+GET /voices?language=ro  → Romanian voices (eleven_multilingual_v2 compatible)
+GET /voices?language=en  → English voices
+```
+
+### Recommended Voices for Romanian Narration
+
+ElevenLabs does not have dedicated native Romanian voices, but any voice using `eleven_multilingual_v2` speaks Romanian fluently when passed Romanian text.
+
+| Voice ID | Name | Gender | Best for |
+|----------|------|--------|---------|
+| `EXAVITQu4vr4xnSDxMaL` | Sarah | Female | Mature, reassuring narration |
+| `JBFqnCBsd6RMkjVDRZzb` | George | Male | Warm, captivating storytelling |
 
 ### Endpoints
 
@@ -75,6 +88,7 @@ The Voice Module is a **stable mapping layer** between your internal system and 
 
 ```
 GET /voices
+GET /voices?language=ro
 ```
 
 **Response:**
@@ -82,34 +96,25 @@ GET /voices
 ```json
 [
   {
-    "id": "eleven_voice_001",
-    "slug": "calm_female",
-    "friendly_name": "Calm Female Narrator",
-    "description": "Soft, neutral female narration voice"
+    "id": "EXAVITQu4vr4xnSDxMaL",
+    "slug": "sarah",
+    "friendlyName": "Sarah",
+    "description": "Mature, reassuring, confident"
   }
 ]
 ```
 
 ---
 
-#### Create Voice
+#### Create Voice (local override)
 
 ```
 POST /voices
 ```
 
-**Request Body:**
+Stores a custom voice entry in the local MongoDB registry. Useful for aliasing or overriding ElevenLabs metadata.
 
-```json
-{
-  "id": "eleven_voice_002",
-  "slug": "deep_male",
-  "friendly_name": "Deep Male Narrator",
-  "description": "Low, authoritative male voice"
-}
-```
-
-**Response:** `201 Created` with created voice object.
+**Response:** `201 Created` with the created voice object.
 
 ---
 
@@ -119,7 +124,7 @@ POST /voices
 PUT /voices/{id}
 ```
 
-**Request Body:** Partial or full voice fields (excluding `id`).
+Updates `slug`, `friendlyName`, or `description` in the local registry.
 
 **Response:** `200 OK` with updated voice object.
 
@@ -137,26 +142,18 @@ DELETE /voices/{id}
 
 ## Audio Generation Module
 
-This is the core of the service.
-
 ### Design Decision — Polling over Messaging
-
-Two approaches were considered:
 
 | Option | Decision | Reason |
 |--------|----------|--------|
-| ✅ Polling API + Job Table | **Selected for MVP** | Simple, debuggable, no infrastructure dependency |
-| ❌ RabbitMQ / Celery | Rejected | Overengineering — not needed at MVP scale |
+| Polling API + Job Table | **Selected for MVP** | Simple, debuggable, no infrastructure dependency |
+| RabbitMQ / Celery | Rejected | Overengineering — not needed at MVP scale |
 
-The polling model is:
+### TTS Provider
 
-```
-FastAPI receives job → stores job → processes async → Spring Boot polls for status
-```
+All synthesis is performed via **ElevenLabs** using the `eleven_multilingual_v2` model (configurable via `ELEVENLABS_MODEL`). The model supports Romanian, English, and 28 other languages without changing voice or configuration.
 
-No message broker. No external worker system.
-
----
+Output format: `mp3_44100_128` (44.1 kHz, 128 kbps).
 
 ### TTS Job Data Model
 
@@ -164,14 +161,13 @@ No message broker. No external worker system.
 {
   "taskId": "uuid",
   "status": "PENDING | PROCESSING | COMPLETED | FAILED",
-  "createdAt": "2026-04-23T10:00:00Z",
-  "updatedAt": "2026-04-23T10:00:45Z",
+  "createdAt": "2026-04-24T10:00:00Z",
+  "updatedAt": "2026-04-24T10:00:45Z",
   "payload": [
     {
       "segmentNumber": 0,
       "text": "It was a dark and stormy night.",
-      "voiceId": "eleven_voice_001",
-      "tone": "dramatic",
+      "voiceId": "EXAVITQu4vr4xnSDxMaL",
       "personaId": "persona_abc",
       "transformationId": "transform_001"
     }
@@ -210,16 +206,14 @@ POST /tts/tasks
     {
       "segmentNumber": 0,
       "text": "It was a dark and stormy night.",
-      "tone": "dramatic",
-      "voiceId": "eleven_voice_001",
+      "voiceId": "EXAVITQu4vr4xnSDxMaL",
       "personaId": "persona_abc",
       "transformationId": "transform_001"
     },
     {
       "segmentNumber": 1,
       "text": "She whispered his name into the silence.",
-      "tone": "soft",
-      "voiceId": "eleven_voice_002",
+      "voiceId": "JBFqnCBsd6RMkjVDRZzb",
       "personaId": "persona_xyz",
       "transformationId": "transform_001"
     }
@@ -244,15 +238,6 @@ POST /tts/tasks
 GET /tts/tasks/{taskId}
 ```
 
-**Response (in progress):**
-
-```json
-{
-  "taskId": "abc123",
-  "status": "PROCESSING"
-}
-```
-
 **Response (completed):**
 
 ```json
@@ -266,25 +251,15 @@ GET /tts/tasks/{taskId}
 }
 ```
 
-**Response (failed):**
-
-```json
-{
-  "taskId": "abc123",
-  "status": "FAILED",
-  "error": "TTS provider returned an error on segment 1."
-}
-```
-
 ---
 
-#### Get Resolved Content *(convenience endpoint)*
+#### Get Resolved Content
 
 ```
 GET /tts/tasks/{taskId}/content
 ```
 
-Returns the fully resolved, playback-ready structure — useful for Spring Boot to avoid manual aggregation.
+Returns the fully resolved, playback-ready structure — segments merged with text, personaId, and audioUrl.
 
 **Response:**
 
@@ -298,12 +273,6 @@ Returns the fully resolved, playback-ready structure — useful for Spring Boot 
       "text": "It was a dark and stormy night.",
       "personaId": "persona_abc",
       "audioUrl": "/audio/abc123/0.mp3"
-    },
-    {
-      "segmentNumber": 1,
-      "text": "She whispered his name into the silence.",
-      "personaId": "persona_xyz",
-      "audioUrl": "/audio/abc123/1.mp3"
     }
   ]
 }
@@ -313,22 +282,19 @@ Returns the fully resolved, playback-ready structure — useful for Spring Boot 
 
 ## Internal Processing Flow
 
-### Step-by-Step
-
 ```
 1. POST /tts/tasks received
         ↓
 2. Create TTS Job in MongoDB (status: PENDING)
         ↓
-3. Acknowledge request → return taskId immediately
+3. Return taskId immediately (202 Accepted)
         ↓
 4. Background worker picks up job (status: PROCESSING)
         ↓
-5. For each segment:
-        a. Call TTS provider with text + voiceId
-        b. Receive audio binary
-        c. Write to disk: /tts-storage/{taskId}/{segmentNumber}.mp3
-        d. Store resulting audioUrl in job result array
+5. For each segment (sorted by segmentNumber):
+        a. Call ElevenLabs text_to_speech.convert(voice_id, text, model_id)
+        b. Stream audio chunks to disk: tts-storage/{taskId}/{segmentNumber}.mp3
+        c. Append audioUrl to job result array
         ↓
 6. Mark job COMPLETED (or FAILED on error)
         ↓
@@ -341,18 +307,15 @@ Returns the fully resolved, playback-ready structure — useful for Spring Boot 
 
 | Option | Decision | Reason |
 |--------|----------|--------|
-| ✅ FastAPI `BackgroundTasks` or internal `asyncio` queue | **Selected** | Built-in, zero dependencies |
-| ❌ Celery | Rejected | Requires Redis/RabbitMQ broker — overkill |
-| ❌ External worker process | Rejected | Unnecessary infrastructure for MVP |
+| FastAPI `BackgroundTasks` + thread pool executor | **Selected** | Built-in, zero dependencies; ElevenLabs SDK is synchronous so it runs in executor |
+| Celery | Rejected | Requires Redis/RabbitMQ broker — overkill for MVP |
 
 ```python
-# Simplified example
-from fastapi import BackgroundTasks
-
-@app.post("/tts/tasks")
-async def create_task(payload: TTSRequest, background_tasks: BackgroundTasks):
-    task_id = create_job_in_db(payload)
-    background_tasks.add_task(process_tts_job, task_id, payload)
+@router.post("")
+async def create_task(payload: TTSTaskCreate, background_tasks: BackgroundTasks):
+    task_id = str(uuid.uuid4())
+    # persist to DB ...
+    background_tasks.add_task(process_tts_task, task_id, payload.segments)
     return {"status": "accepted", "taskId": task_id}
 ```
 
@@ -360,88 +323,44 @@ async def create_task(payload: TTSRequest, background_tasks: BackgroundTasks):
 
 ## Storage Strategy
 
-### Decision — Local Filesystem (MVP)
+### Local Filesystem (MVP)
 
 | Option | Decision | Reason |
 |--------|----------|--------|
-| ✅ Local filesystem | **Selected** | Zero infrastructure overhead, instant dev speed |
-| ❌ AWS S3 | Rejected | Too early — adds credentials, IAM, bucket policies |
-| ❌ MinIO / CDN | Post-MVP | Migration path when scale requires it |
+| Local filesystem | **Selected** | Zero infrastructure overhead |
+| AWS S3 | Post-MVP | Migration path when scale requires it |
 
 ### Directory Structure
 
 ```
-/tts-storage/
-  /{taskId}/
-      0.mp3
-      1.mp3
-      2.mp3
+tts-storage/
+  {taskId}/
+    0.mp3
+    1.mp3
+    2.mp3
 ```
 
-Or with transformation context for traceability:
-
-```
-/tts-storage/
-  /transformations/{transformationId}/
-    /tasks/{taskId}/
-        0001.mp3
-        0002.mp3
-```
-
-### File Naming Convention
-
-Use **deterministic naming** — never random UUIDs for individual audio files.
-
-```
-{segmentNumber}.mp3
-```
-
-Or, for improved cacheability:
-
-```
-{voiceId}_{segmentNumber}.mp3
-```
-
-**Why deterministic?**
-- Prevents duplication on regeneration
-- Makes caching trivial in post-MVP
-- Allows safe re-runs without orphaned files
-
-### Serving Files via FastAPI
+### Serving Files
 
 Audio files are served as static assets directly from FastAPI:
 
 ```python
-from fastapi.staticfiles import StaticFiles
-
 app.mount("/audio", StaticFiles(directory="tts-storage"), name="audio")
 ```
 
-This means any generated file is immediately accessible at:
+Any generated file is immediately accessible at:
 
 ```
 GET /audio/{taskId}/{segmentNumber}.mp3
 ```
 
-No additional serving infrastructure needed.
-
-### Data Responsibility Split
-
-| Layer | Stores |
-|-------|--------|
-| **MongoDB** | Job metadata, status, result URLs, payload |
-| **Filesystem** | Binary `.mp3` files only |
-
-> Audio files are **derivatives**, not core data. The source of truth is always the MongoDB job document. Files are regenerable from the job payload.
-
 ### Future Migration Path
 
-When MVP outgrows local storage, migration requires **zero frontend changes** because the API already returns an `audioUrl` field. Only the backend storage implementation changes.
+The `audioUrl` abstraction in the API contract means the storage backend can be swapped without any frontend changes:
 
 ```
-Step 1 (NOW):    Local filesystem  →  /audio/{taskId}/{n}.mp3
-Step 2 (later):  S3-compatible     →  https://bucket.s3.../audio/{taskId}/{n}.mp3
-Step 3 (later):  CDN layer         →  https://cdn.example.com/audio/{taskId}/{n}.mp3
+Now:   /audio/{taskId}/{n}.mp3
+Later: https://bucket.s3.../audio/{taskId}/{n}.mp3
 ```
 
 ---
@@ -450,7 +369,6 @@ Step 3 (later):  CDN layer         →  https://cdn.example.com/audio/{taskId}/{
 
 ```
 Spring Boot
-    │
     │  POST /tts/tasks  (segments with text + voiceId)
     ▼
 FastAPI
@@ -458,60 +376,48 @@ FastAPI
     │  Returns taskId immediately
     │
     │  [Background Worker]
-    │  Calls TTS provider per segment
-    │  Writes .mp3 files to /tts-storage/{taskId}/
-    │  Updates job result with audioUrls
+    │  Calls ElevenLabs per segment (eleven_multilingual_v2)
+    │  Streams audio chunks → tts-storage/{taskId}/N.mp3
     │  Marks job COMPLETED
     │
 Spring Boot (polling)
-    │
-    │  GET /tts/tasks/{taskId}   ← polls until COMPLETED
-    ▼
-Spring Boot
-    │  Reads result audioUrls
-    │  Assembles Content object
-    │  Saves Content to MongoDB
-    │  Marks Transformation → READY
+    │  GET /tts/tasks/{taskId}  ← polls until COMPLETED
+    │  GET /tts/tasks/{taskId}/content
+    │  Assembles Content object → saves to MongoDB
+    │  Marks Transformation → DONE
     ▼
 Frontend
-    │  GET /content/{transformationId}
-    │  Receives sections with text + personaId + audioUrl
+    │  GET /api/v1/content/{transformationId}
     ▼
-Player
-    Plays audiobook with synchronized text + audio
+Player — synchronized text + audio
 ```
 
 ---
 
 ## Key Design Decisions
 
-### 1. Polling over Messaging
+### 1. ElevenLabs over Azure TTS
 
-Polling was chosen over RabbitMQ or Celery because:
+ElevenLabs was chosen over Azure Cognitive Services because:
+- Significantly higher voice quality and naturalness
+- `eleven_multilingual_v2` handles Romanian without separate voice configuration
+- No region/endpoint management
+- Simple REST API with a first-class Python SDK
 
-- No broker infrastructure to deploy or manage
-- Fully debuggable — job state is always visible in MongoDB
-- Sufficient for MVP request volume
-- Spring Boot already has a polling loop pattern built in
+### 2. Live Voice API, No Local Seed
 
-### 2. Job-Based Batch Model
+Voices are fetched live from ElevenLabs on every `GET /voices` request rather than seeded into MongoDB on startup. This means:
+- Voice catalog is always up to date with ElevenLabs additions
+- Language filtering is handled server-side by ElevenLabs
+- No maintenance of a static voice list
 
-The service does not stream audio and does not synthesize in real time. It processes a complete batch of segments for a transformation and marks the job done. Playback only begins after the entire job is `COMPLETED`. This keeps the player experience deterministic and buffer-free.
+### 3. Polling over Messaging
 
-### 3. Local Filesystem for Audio
+No broker infrastructure to deploy or manage. Job state is always visible in MongoDB. Sufficient for MVP request volume.
 
-Chosen for zero infrastructure overhead. Audio files are treated as **disposable derivatives** — regenerable from the job payload at any time. The `audioUrl` abstraction in the API contract means the storage backend can be swapped (to S3, MinIO, etc.) without any frontend change.
+### 4. Job-Based Batch Model
 
-### 4. Idempotency Deferred
-
-The following are explicitly **not required for MVP**:
-
-- Retry logic on failed segments
-- Duplicate job detection
-- Distributed locks
-- Exactly-once delivery guarantees
-
-These become relevant post-MVP when multiple concurrent users generate audio simultaneously.
+The service processes a complete batch of segments per transformation and marks the job done. Playback only begins after the entire job is `COMPLETED`. This keeps the player experience deterministic and buffer-free.
 
 ---
 
@@ -519,11 +425,13 @@ These become relevant post-MVP when multiple concurrent users generate audio sim
 
 ### In Scope
 
-- [x] Voice CRUD (admin-only)
+- [x] `GET /voices` — live ElevenLabs proxy with optional `?language=` filter
+- [x] Voice CRUD for local overrides
 - [x] `POST /tts/tasks` — submit batch generation job
 - [x] `GET /tts/tasks/{taskId}` — poll job status
 - [x] `GET /tts/tasks/{taskId}/content` — convenience resolved endpoint
-- [x] Async background worker (FastAPI BackgroundTasks / asyncio)
+- [x] Async background worker (FastAPI BackgroundTasks + executor)
+- [x] ElevenLabs synthesis via `eleven_multilingual_v2`
 - [x] Local filesystem audio storage
 - [x] Static file serving via FastAPI
 - [x] MongoDB job tracking
@@ -532,10 +440,9 @@ These become relevant post-MVP when multiple concurrent users generate audio sim
 
 | Feature | Why deferred |
 |---------|-------------|
-| RabbitMQ / Celery | Overengineering for current load |
 | S3 / MinIO storage | Infrastructure not needed yet |
 | CDN audio delivery | Post-validation |
 | WebSocket progress updates | Polling is sufficient |
 | Streaming / real-time TTS | Different product feature |
 | Retry & idempotency logic | Deferred until concurrent load demands it |
-| Distributed locks | Single-instance MVP doesn't need them |
+| Tone/SSML processing | Text is sent as plain text |

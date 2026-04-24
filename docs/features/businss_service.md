@@ -1,8 +1,9 @@
-# ☕ Java Service (Spring Boot) — Feature Documentation
+# Java Service (Spring Boot) — Feature Documentation
 
-> **Service Role:** System of record + orchestration layer  
-> **Stack:** Java · Spring Boot · MongoDB  
-> **Version:** MVP 1.0
+> **Service Role:** System of record + orchestration layer
+> **Stack:** Java 17 · Spring Boot 3 · MongoDB
+> **Port:** 8080
+> **Version:** MVP 1.0 — implemented
 
 ---
 
@@ -29,7 +30,8 @@ The Java service is the **system of record and orchestration layer** for the ent
 | Owns all business logic | Generate audio |
 | Manages transformation state machine | Store audio files |
 | Coordinates calls to the TTS service | Serve static assets |
-| Is the single source of truth for frontend | Handle TTS provider directly |
+| Is the single source of truth for the frontend | Handle TTS provider directly |
+| Proxies voice listing to the Python service | |
 
 ### Mental Model
 
@@ -49,7 +51,7 @@ This is not a real-time system, not an event-driven architecture, and not a dist
 POST /api/v1/books
 ```
 
-Accepts a structured JSON file and persists it as a `Book` document in MongoDB.
+Accepts a structured JSON payload and persists it as a `Book` document in MongoDB.
 
 ---
 
@@ -63,67 +65,54 @@ Returns all available books. Read-only for `TESTER` role.
 
 ---
 
-#### Get Sections for a Book
+#### Get Book
 
 ```
-GET /api/v1/books/{bookId}/sections
+GET /api/v1/books/{bookId}
 ```
 
-Returns all sections belonging to the specified book.
+Returns the full book document including all sections and content paragraphs.
 
 ---
 
-#### Get a Single Section
-
-```
-GET /api/v1/books/{bookId}/sections/{sectionId}
-```
-
-Returns a single section by ID. Used by the player and transformation builder.
-
----
-
-### Book File Format
-
-When a `SUPERADMIN` uploads a book, it must follow this structure. The `sectionId` field is critical — it is the stable key used throughout the transformation and TTS pipeline.
+### Book Data Format
 
 ```json
 {
+  "title": "The Midnight Expedition",
   "version": "1.0",
   "sections": [
     {
       "sectionId": "s1",
       "sectionName": "Chapter 1 - Introduction",
       "content": [
-        { "text": "Initial paragraph text." },
-        { "text": "Second paragraph text." }
+        { "text": "Initial paragraph text.", "author": "narrator" },
+        { "text": "Second paragraph text.", "author": "narrator" }
       ]
     },
     {
       "sectionId": "s2",
-      "sectionName": "Chapter 1 - The Discovery",
+      "sectionName": "Chapter 2 - Dialog",
       "content": [
-        { "text": "She opened the door slowly." }
+        { "text": "You shouldn't have come here.", "author": "edmund" },
+        { "text": "I had no choice.", "author": "margaret" }
       ]
     }
   ]
 }
 ```
 
-**Why this format matters:**
-
-| Requirement | How the format satisfies it |
-|-------------|----------------------------|
-| Stable section identity | `sectionId` is explicit and deterministic — never auto-generated from position |
-| TTS mapping | `personaMapping` in transformations uses `sectionId` as key |
-| Unambiguous display | `sectionName` is clear and human-readable |
-| Multiple paragraphs per section | `content` is an array, so sections are not limited to a single text block |
+| Field | Requirement |
+|-------|-------------|
+| `sectionId` | Explicit and deterministic — used as key in `personaMapping` |
+| `author` | The character speaking — users assign voices per author, not per paragraph |
+| `sectionName` | Human-readable section label |
 
 ---
 
 ## Transformation Module
 
-The Transformation is the **core domain object** of the system. It tracks a user's journey from book selection through persona assignment to completed audio generation.
+The Transformation is the **core domain object**. It tracks a user's journey from book selection through persona assignment to completed audio generation.
 
 ### Data Model
 
@@ -138,20 +127,19 @@ The Transformation is the **core domain object** of the system. It tracks a user
     "s2": "persona_xyz"
   },
   "ttsTaskId": "abc123",
-  "createdAt": "2026-04-23T10:00:00Z",
-  "updatedAt": "2026-04-23T10:05:30Z"
+  "createdAt": "2026-04-24T10:00:00Z",
+  "updatedAt": "2026-04-24T10:05:30Z"
 }
 ```
 
 | Field | Description |
 |-------|-------------|
 | `id` | Unique transformation identifier |
-| `userId` | Owner of this transformation |
+| `userId` | Owner |
 | `bookId` | The book this transformation applies to |
 | `status` | Current phase in the state machine |
 | `personaMapping` | Map of `sectionId → personaId` |
 | `ttsTaskId` | Stored after Java calls Python — used for internal polling |
-| `createdAt / updatedAt` | Full audit trail |
 
 ### Status State Machine
 
@@ -168,7 +156,7 @@ GENERATING
 DONE
 ```
 
-Each status transition is owned and validated by Java. The frontend never advances the state directly.
+Each transition is owned and validated by Java. The frontend never advances state directly.
 
 ### Endpoints
 
@@ -178,15 +166,23 @@ Each status transition is owned and validated by Java. The frontend never advanc
 POST /api/v1/transformations
 ```
 
-**Request Body:**
+**Request:**
 
 ```json
-{
-  "bookId": "b1"
-}
+{ "bookId": "b1" }
 ```
 
-**Response:** New transformation object with `status: DRAFT`.
+**Response:** New transformation with `status: DRAFT`. Returns `409` if user already has 5 transformations.
+
+---
+
+#### List Transformations
+
+```
+GET /api/v1/transformations
+```
+
+Returns all transformations for the current authenticated user.
 
 ---
 
@@ -196,7 +192,7 @@ POST /api/v1/transformations
 GET /api/v1/transformations/{id}
 ```
 
-Returns the full transformation including current status. This is the endpoint the frontend polls to check generation readiness.
+Returns full transformation including current status. This is the endpoint the frontend polls to detect generation completion.
 
 ---
 
@@ -206,7 +202,7 @@ Returns the full transformation including current status. This is the endpoint t
 PUT /api/v1/transformations/{id}/personas
 ```
 
-**Request Body:**
+**Request:**
 
 ```json
 {
@@ -227,7 +223,7 @@ Advances status from `DRAFT` → `PERSONA_ASSIGNMENT` (or updates an existing ma
 POST /api/v1/transformations/{id}/generate
 ```
 
-Kicks off the audio generation pipeline. Java validates the transformation, builds the TTS request, calls the Python service, stores the returned `ttsTaskId`, and sets status to `GENERATING`.
+Kicks off the audio generation pipeline. Returns immediately.
 
 **Response:**
 
@@ -243,26 +239,18 @@ Kicks off the audio generation pipeline. Java validates the transformation, buil
 
 ## Persona & Voice Separation
 
-A key architectural clarification: **voices** and **personas** are owned by different services.
+Voices and personas are owned by different services:
 
 | Concept | Owner | Description |
 |---------|-------|-------------|
-| **Voice** | Python TTS Service | Raw TTS provider voice — e.g., an ElevenLabs voice ID |
-| **Persona** | Java Service | User-defined mapping layer — a named character assigned to a voice |
+| **Voice** | Python TTS Service | Raw ElevenLabs voice — a `voice_id` string |
+| **Persona** | Java Service | User-defined mapping — a named character assigned to a voice |
 
-This separation means:
+This means:
+- Python is a **voice registry** (provider-coupled, fetched live from ElevenLabs)
+- Java is a **persona registry** (user-specific, book-scoped, human-readable)
 
-- The Python service is a **voice registry** (stable, admin-managed, provider-coupled)
-- The Java service is a **persona registry** (user-specific, book-scoped, human-readable)
-
-### Flow
-
-```
-Python TTS Service → owns voices  (e.g., "eleven_voice_001", "calm_female")
-Java Service       → owns personas (e.g., "Old Wizard" mapped to "eleven_voice_001")
-```
-
-When Java builds a TTS request, it resolves `personaId → voiceId` internally before sending segments to Python. Python only ever sees `voiceId`.
+When Java builds a TTS request, it resolves `personaId → voiceId` internally before sending segments to Python. Python only ever sees raw `voiceId` values.
 
 ### Persona Data Model (Java)
 
@@ -272,15 +260,13 @@ When Java builds a TTS request, it resolves `personaId → voiceId` internally b
   "userId": "u1",
   "bookId": "b1",
   "name": "Old Wizard",
-  "voiceId": "eleven_voice_001"
+  "voiceId": "JBFqnCBsd6RMkjVDRZzb"
 }
 ```
 
 ---
 
 ## Generation Flow
-
-This is the critical path — the sequence that takes a completed persona assignment and produces a playable audiobook.
 
 ### Step-by-Step
 
@@ -293,55 +279,51 @@ This is the critical path — the sequence that takes a completed persona assign
         ↓
 3. Java fetches all section texts for the book
         ↓
-4. Java resolves each persona → voiceId
+4. Java resolves each sectionId → personaId → voiceId
         ↓
-5. Java builds TTS request payload:
+5. Java builds TTS request:
    [
-     { segmentNumber: 0, text: "...", voiceId: "v1", personaId: "p1", ... },
-     { segmentNumber: 1, text: "...", voiceId: "v2", personaId: "p2", ... }
+     { segmentNumber: 0, text: "...", voiceId: "EXAVITQu...", personaId: "p1", transformationId: "t1" },
+     { segmentNumber: 1, text: "...", voiceId: "JBFqnCBs...", personaId: "p2", transformationId: "t1" }
    ]
         ↓
-6. Java calls POST /tts/tasks (Python)
+6. Java calls POST /tts/tasks (Python service)
         ↓
-7. Python returns taskId
+7. Python returns taskId immediately (202 Accepted)
         ↓
-8. Java stores taskId on the Transformation document
+8. Java stores taskId on Transformation
 9. Java sets status → GENERATING
         ↓
 10. [Background: Java polls Python GET /tts/tasks/{taskId}]
         ↓
 11. Python returns COMPLETED with audioUrls
         ↓
-12. Java assembles Content object
-13. Java persists Content to MongoDB
-14. Java sets Transformation status → DONE
+12. Java calls GET /tts/tasks/{taskId}/content
+13. Java assembles Content object
+14. Java persists Content to MongoDB
+15. Java sets Transformation status → DONE
 ```
 
 ### Internal Polling (Java → Python)
 
-Java is responsible for polling the Python TTS service internally. The frontend never contacts Python directly.
-
 ```
-Java Scheduler / Background Thread
-    │
-    │  GET /tts/tasks/{ttsTaskId}   (polls until COMPLETED)
+Java Background Scheduler
+    │  GET /tts/tasks/{ttsTaskId}  (every N seconds)
     ▼
 Python TTS Service
-    │  Returns status + audioUrls
+    │  Returns { status: "COMPLETED", result: [...] }
     ▼
 Java
-    │  Assembles Content object
-    │  Saves to MongoDB
+    │  GET /tts/tasks/{taskId}/content
+    │  Assembles Content
     │  Sets Transformation → DONE
 ```
-
-**Polling strategy for MVP:** A simple scheduled task or `@Async` method with a sleep loop is sufficient. No external scheduler needed.
 
 ---
 
 ## Content Model
 
-The `Content` object is the **final, precomputed playback graph** consumed by the frontend player. It is assembled by Java once TTS generation is complete and stored in MongoDB.
+The `Content` object is the **final, precomputed playback graph** consumed by the frontend player. Assembled once after TTS generation completes and stored in MongoDB.
 
 ```json
 {
@@ -351,26 +333,15 @@ The `Content` object is the **final, precomputed playback graph** consumed by th
   "items": [
     {
       "sectionId": "s1",
+      "sectionName": "Chapter 1 - Introduction",
       "text": "It was a dark and stormy night.",
-      "audioUri": "http://tts-service/audio/abc123/0.mp3",
-      "personaId": "persona_abc"
-    },
-    {
-      "sectionId": "s2",
-      "text": "She opened the door slowly.",
-      "audioUri": "http://tts-service/audio/abc123/1.mp3",
-      "personaId": "persona_xyz"
+      "audioUri": "https://audio-renderer.trycloudflare.com/audio/abc123/0.mp3",
+      "personaId": "persona_abc",
+      "voiceId": "EXAVITQu4vr4xnSDxMaL"
     }
   ]
 }
 ```
-
-| Field | Description |
-|-------|-------------|
-| `contentId` | Unique content identifier |
-| `bookId` | Source book |
-| `transformationId` | The transformation this content was generated from |
-| `items` | Ordered array of sections with text, audio URL, and persona |
 
 ### Access Endpoint
 
@@ -378,30 +349,26 @@ The `Content` object is the **final, precomputed playback graph** consumed by th
 GET /api/v1/content/{transformationId}
 ```
 
-Returns the full `Content` object once the transformation status is `DONE`. The frontend calls this once and then drives the player entirely from the response.
+Returns the full `Content` object once the transformation status is `DONE`. The frontend calls this once and drives the player entirely from the response.
 
 ---
 
 ## Polling Architecture Decision
 
-The frontend needs to know when generation is complete. Three options were evaluated:
-
 | Option | Decision | Reason |
 |--------|----------|--------|
-| ✅ Frontend polls Java | **Selected** | Clean, single source of truth, secure, debuggable |
-| ❌ Frontend polls Python directly | Rejected | Bypasses orchestration, couples frontend to TTS infrastructure, no security control |
-| ❌ Java pushes via WebSockets / Kafka | Rejected | Overengineering for MVP load and team size |
+| Frontend polls Java | **Selected** | Clean, single source of truth, secure, debuggable |
+| Frontend polls Python directly | Rejected | Bypasses orchestration, no security boundary |
+| Java pushes via WebSockets / Kafka | Rejected | Overengineering for MVP load |
 
 ### Selected Flow
 
 ```
 Frontend
-    │
-    │  GET /api/v1/transformations/{id}   (polls every N seconds)
+    │  GET /api/v1/transformations/{id}  every 3s
     ▼
-Java
-    │  Returns { status: "GENERATING" }   ← keep polling
-    │  Returns { status: "DONE" }         ← stop polling, load content
+Java → { status: "GENERATING" }  ← keep polling
+Java → { status: "DONE" }        ← stop, load content
     ▼
 Frontend
     │  GET /api/v1/content/{transformationId}
@@ -409,53 +376,42 @@ Frontend
 Player starts
 ```
 
-The frontend only ever talks to Java. Java handles all coordination with Python internally.
-
 ---
 
 ## Full System Flow
 
 ```
 1.  SUPERADMIN uploads book
-         ↓
-    POST /api/v1/books
-    Java parses file → stores Book/Sections in MongoDB
+         ↓  POST /api/v1/books
+         Java parses → stores Book in MongoDB
 
 2.  User creates transformation
-         ↓
-    POST /api/v1/transformations
-    Java creates Transformation (status: DRAFT)
+         ↓  POST /api/v1/transformations
+         Java creates Transformation (status: DRAFT)
 
 3.  User assigns personas
-         ↓
-    PUT /api/v1/transformations/{id}/personas
-    Java saves personaMapping (status: PERSONA_ASSIGNMENT)
+         ↓  PUT /api/v1/transformations/{id}/personas
+         Java saves personaMapping (status: PERSONA_ASSIGNMENT)
 
 4.  User triggers generation
-         ↓
-    POST /api/v1/transformations/{id}/generate
-    Java validates → builds TTS payload → calls Python
-    Java stores ttsTaskId (status: GENERATING)
+         ↓  POST /api/v1/transformations/{id}/generate
+         Java validates → builds TTS payload → calls Python
+         Java stores ttsTaskId (status: GENERATING)
 
 5.  Python generates audio
-         ↓
-    [Java polls GET /tts/tasks/{taskId} internally]
-    Python returns COMPLETED + audioUrls
+         [Java polls GET /tts/tasks/{taskId} internally]
+         Python returns COMPLETED + audioUrls
 
 6.  Java assembles Content
-         ↓
-    Java stores Content in MongoDB
-    Java sets Transformation → DONE
+         Java stores Content in MongoDB
+         Java sets Transformation → DONE
 
 7.  Frontend detects DONE
-         ↓
-    GET /api/v1/transformations/{id}  → status: DONE
-    GET /api/v1/content/{transformationId}
+         GET /api/v1/content/{transformationId}
 
 8.  Playback begins
-         ↓
-    Player iterates Content items
-    Displays text + persona, plays audio per section
+         Player iterates Content items
+         Displays text + persona, plays audio per section
 ```
 
 ---
@@ -468,11 +424,7 @@ The frontend never needs to understand the TTS system. It only talks to Java. Ja
 
 ### 2. Polling over Events (for MVP)
 
-A polling model backed by DB state was chosen over WebSockets, Kafka, or server-sent events. The result is a system that is:
-
-- Fully debuggable — job state is always visible in MongoDB
-- Stateless between requests — no in-memory session tracking needed
-- Simple to reason about — status transitions are explicit and synchronous
+A polling model backed by DB state was chosen over WebSockets, Kafka, or server-sent events. The result is a system that is fully debuggable, stateless between requests, and simple to reason about.
 
 ### 3. Content is Precomputed
 
@@ -480,8 +432,8 @@ The `Content` object is generated once and stored. The frontend player reads a s
 
 ### 4. Personas Live in Java, Voices Live in Python
 
-This separation keeps each service focused on its own domain. Python manages the TTS provider abstraction. Java manages the user experience layer (naming, book scoping, persona identity). Neither bleeds into the other's domain.
+Python manages the ElevenLabs voice abstraction. Java manages the user experience layer — naming, book scoping, persona identity. Neither bleeds into the other's domain.
 
-### 5. State Machine over Ad-Hoc Status Flags
+### 5. State Machine over Ad-Hoc Flags
 
-Using a formal `DRAFT → PERSONA_ASSIGNMENT → GENERATING → DONE` state machine prevents invalid transitions, makes the system self-documenting, and gives the frontend a reliable contract for rendering the correct UI phase at each step.
+The formal `DRAFT → PERSONA_ASSIGNMENT → GENERATING → DONE` state machine prevents invalid transitions, makes the system self-documenting, and gives the frontend a reliable contract for rendering the correct UI phase at each step.

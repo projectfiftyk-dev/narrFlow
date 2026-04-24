@@ -1,0 +1,429 @@
+{
+  "info": {
+    "name": "narrFlow API",
+    "_postman_id": "narrflow-collection-v1",
+    "description": "API collection for the narrFlow multi-persona audiobook platform.\n\n**Services:**\n- Orchestrator Service: `{{orchestratorUrl}}` (default: http://localhost:8080)\n- Audio Renderer Service: `{{audioRendererUrl}}` (default: http://localhost:8081)\n\n**Typical happy-path flow:**\n1. GET Voices → pick voiceIds for each author\n2. POST Create Book → saves `bookId`\n3. POST Create Transformation → saves `transformationId`\n4. PUT Update Voice Mapping → maps author → voiceId\n5. POST Trigger Generation → starts TTS job\n6. GET Get Transformation (poll until status = DONE)\n7. GET Get Content → playable items with audioUri per paragraph",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "orchestratorUrl", "value": "http://localhost:8080", "type": "string" },
+    { "key": "audioRendererUrl", "value": "http://localhost:8081", "type": "string" },
+    { "key": "userId", "value": "user-001", "type": "string" },
+    { "key": "bookId", "value": "", "type": "string" },
+    { "key": "sectionId", "value": "s1", "type": "string" },
+    { "key": "transformationId", "value": "", "type": "string" },
+    { "key": "ttsTaskId", "value": "", "type": "string" }
+  ],
+  "item": [
+    {
+      "name": "Orchestrator Service",
+      "item": [
+        {
+          "name": "Voices",
+          "item": [
+            {
+              "name": "Get Voices",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{orchestratorUrl}}/api/v1/voices",
+                  "host": ["{{orchestratorUrl}}"],
+                  "path": ["api", "v1", "voices"]
+                },
+                "description": "Returns the list of available Azure TTS voices (proxied from the Audio Renderer service). Use the `id` values as voiceIds when building a voice mapping."
+              },
+              "response": []
+            }
+          ]
+        },
+        {
+          "name": "Books",
+          "item": [
+            {
+              "name": "Create Book",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "exec": [
+                      "if (pm.response.code === 201) {",
+                      "    const body = pm.response.json();",
+                      "    pm.collectionVariables.set('bookId', body.id);",
+                      "    console.log('bookId saved:', body.id);",
+                      "}"
+                    ],
+                    "type": "text/javascript"
+                  }
+                }
+              ],
+              "request": {
+                "method": "POST",
+                "header": [
+                  { "key": "Content-Type", "value": "application/json" }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"title\": \"The Midnight Expedition\",\n  \"version\": \"1.0\",\n  \"sections\": [\n    {\n      \"sectionId\": \"s1\",\n      \"sectionName\": \"Chapter 1 - The Letter\",\n      \"content\": [\n        { \"text\": \"The letter arrived on a Tuesday, which Margaret always said was the worst day for surprises.\", \"author\": \"narrator\" },\n        { \"text\": \"She turned it over in her hands, studying the wax seal — a raven mid-flight — before finally breaking it open.\", \"author\": \"narrator\" }\n      ]\n    },\n    {\n      \"sectionId\": \"s2\",\n      \"sectionName\": \"Chapter 2 - The Old Man Speaks\",\n      \"content\": [\n        { \"text\": \"You shouldn't have come here. Not after what happened in Oslo.\", \"author\": \"edmund\" },\n        { \"text\": \"I had no choice. You know that better than anyone.\", \"author\": \"margaret\" }\n      ]\n    },\n    {\n      \"sectionId\": \"s3\",\n      \"sectionName\": \"Chapter 3 - Into the Dark\",\n      \"content\": [\n        { \"text\": \"The tunnel stretched further than either of them had expected. Margaret kept her torch low, mindful of the shadows.\", \"author\": \"narrator\" },\n        { \"text\": \"Somewhere ahead, water dripped in a slow, rhythmic pulse — almost like a heartbeat.\", \"author\": \"narrator\" }\n      ]\n    }\n  ]\n}"
+                },
+                "url": {
+                  "raw": "{{orchestratorUrl}}/api/v1/books",
+                  "host": ["{{orchestratorUrl}}"],
+                  "path": ["api", "v1", "books"]
+                },
+                "description": "Creates a new book. The `author` field on each paragraph determines which voice will narrate it during generation. Saves `bookId` to collection variables automatically."
+              },
+              "response": []
+            },
+            {
+              "name": "List Books",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{orchestratorUrl}}/api/v1/books",
+                  "host": ["{{orchestratorUrl}}"],
+                  "path": ["api", "v1", "books"]
+                },
+                "description": "Returns all books in the system."
+              },
+              "response": []
+            },
+            {
+              "name": "Get Book",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{orchestratorUrl}}/api/v1/books/{{bookId}}",
+                  "host": ["{{orchestratorUrl}}"],
+                  "path": ["api", "v1", "books", "{{bookId}}"]
+                },
+                "description": "Returns a single book by ID."
+              },
+              "response": []
+            },
+            {
+              "name": "Get Sections",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{orchestratorUrl}}/api/v1/books/{{bookId}}/sections",
+                  "host": ["{{orchestratorUrl}}"],
+                  "path": ["api", "v1", "books", "{{bookId}}", "sections"]
+                },
+                "description": "Returns the section list for a book."
+              },
+              "response": []
+            },
+            {
+              "name": "Get Section",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{orchestratorUrl}}/api/v1/books/{{bookId}}/sections/{{sectionId}}",
+                  "host": ["{{orchestratorUrl}}"],
+                  "path": ["api", "v1", "books", "{{bookId}}", "sections", "{{sectionId}}"]
+                },
+                "description": "Returns a single section by ID. Set `sectionId` in collection variables (default: s1)."
+              },
+              "response": []
+            }
+          ]
+        },
+        {
+          "name": "Transformations",
+          "item": [
+            {
+              "name": "Create Transformation",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "exec": [
+                      "if (pm.response.code === 201) {",
+                      "    const body = pm.response.json();",
+                      "    pm.collectionVariables.set('transformationId', body.id);",
+                      "    console.log('transformationId saved:', body.id);",
+                      "}"
+                    ],
+                    "type": "text/javascript"
+                  }
+                }
+              ],
+              "request": {
+                "method": "POST",
+                "header": [
+                  { "key": "Content-Type", "value": "application/json" },
+                  { "key": "X-User-Id", "value": "{{userId}}" }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"bookId\": \"{{bookId}}\"\n}"
+                },
+                "url": {
+                  "raw": "{{orchestratorUrl}}/api/v1/transformations",
+                  "host": ["{{orchestratorUrl}}"],
+                  "path": ["api", "v1", "transformations"]
+                },
+                "description": "Creates a new transformation in DRAFT status. Saves `transformationId` to collection variables automatically. Max 5 per user."
+              },
+              "response": []
+            },
+            {
+              "name": "List Transformations",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{orchestratorUrl}}/api/v1/transformations",
+                  "host": ["{{orchestratorUrl}}"],
+                  "path": ["api", "v1", "transformations"]
+                },
+                "description": "Returns all transformations across all users and books. Each item includes `bookId`, `status`, `voiceMapping`, and `ttsTaskId`."
+              },
+              "response": []
+            },
+            {
+              "name": "Get Transformation",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{orchestratorUrl}}/api/v1/transformations/{{transformationId}}",
+                  "host": ["{{orchestratorUrl}}"],
+                  "path": ["api", "v1", "transformations", "{{transformationId}}"]
+                },
+                "description": "Returns a single transformation. Poll this until `status` is `DONE` or `FAILED` after triggering generation."
+              },
+              "response": []
+            },
+            {
+              "name": "Update Voice Mapping",
+              "request": {
+                "method": "PUT",
+                "header": [
+                  { "key": "Content-Type", "value": "application/json" },
+                  { "key": "X-User-Id", "value": "{{userId}}" }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"voiceMapping\": {\n    \"narrator\": \"en-US-JennyNeural\",\n    \"edmund\": \"en-US-GuyNeural\",\n    \"margaret\": \"en-US-AriaNeural\"\n  }\n}"
+                },
+                "url": {
+                  "raw": "{{orchestratorUrl}}/api/v1/transformations/{{transformationId}}/voices",
+                  "host": ["{{orchestratorUrl}}"],
+                  "path": ["api", "v1", "transformations", "{{transformationId}}", "voices"]
+                },
+                "description": "Assigns a voiceId to each author that appears in the book. All authors present in any paragraph must be covered. The voiceIds are validated against the TTS service. Advances status to VOICE_ASSIGNMENT."
+              },
+              "response": []
+            },
+            {
+              "name": "Trigger Generation",
+              "request": {
+                "method": "POST",
+                "header": [
+                  { "key": "X-User-Id", "value": "{{userId}}" }
+                ],
+                "url": {
+                  "raw": "{{orchestratorUrl}}/api/v1/transformations/{{transformationId}}/generate",
+                  "host": ["{{orchestratorUrl}}"],
+                  "path": ["api", "v1", "transformations", "{{transformationId}}", "generate"]
+                },
+                "description": "Submits TTS segments to the Audio Renderer and starts async polling. One segment is created per paragraph. Status moves to GENERATING immediately; poll Get Transformation until DONE."
+              },
+              "response": []
+            }
+          ]
+        },
+        {
+          "name": "Content",
+          "item": [
+            {
+              "name": "Get Content",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{orchestratorUrl}}/api/v1/content/{{transformationId}}",
+                  "host": ["{{orchestratorUrl}}"],
+                  "path": ["api", "v1", "content", "{{transformationId}}"]
+                },
+                "description": "Returns the completed, playable content for a transformation. Only available when status is DONE. Returns one item per paragraph with `sectionId`, `sectionName`, `author`, `text`, `audioUri`, and `voiceId`."
+              },
+              "response": []
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Audio Renderer Service",
+      "item": [
+        {
+          "name": "Health",
+          "item": [
+            {
+              "name": "Health Check",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{audioRendererUrl}}/health",
+                  "host": ["{{audioRendererUrl}}"],
+                  "path": ["health"]
+                },
+                "description": "Returns `{\"status\": \"ok\"}` when the service is running."
+              },
+              "response": []
+            }
+          ]
+        },
+        {
+          "name": "Voices",
+          "item": [
+            {
+              "name": "List Voices",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{audioRendererUrl}}/voices",
+                  "host": ["{{audioRendererUrl}}"],
+                  "path": ["voices"]
+                },
+                "description": "Returns all seeded voices. These are also accessible via the Orchestrator at /api/v1/voices."
+              },
+              "response": []
+            },
+            {
+              "name": "Create Voice",
+              "request": {
+                "method": "POST",
+                "header": [
+                  { "key": "Content-Type", "value": "application/json" }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"id\": \"en-US-DavisNeural\",\n  \"slug\": \"casual_male\",\n  \"friendlyName\": \"Casual Male\",\n  \"description\": \"Friendly, casual male voice\"\n}"
+                },
+                "url": {
+                  "raw": "{{audioRendererUrl}}/voices",
+                  "host": ["{{audioRendererUrl}}"],
+                  "path": ["voices"]
+                },
+                "description": "Registers a new voice. Returns 409 if the voice id already exists."
+              },
+              "response": []
+            },
+            {
+              "name": "Update Voice",
+              "request": {
+                "method": "PUT",
+                "header": [
+                  { "key": "Content-Type", "value": "application/json" }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"friendlyName\": \"Updated Name\",\n  \"description\": \"Updated description\"\n}"
+                },
+                "url": {
+                  "raw": "{{audioRendererUrl}}/voices/en-US-JennyNeural",
+                  "host": ["{{audioRendererUrl}}"],
+                  "path": ["voices", "en-US-JennyNeural"]
+                },
+                "description": "Updates `slug`, `friendlyName`, or `description` of an existing voice. All fields are optional."
+              },
+              "response": []
+            },
+            {
+              "name": "Delete Voice",
+              "request": {
+                "method": "DELETE",
+                "header": [],
+                "url": {
+                  "raw": "{{audioRendererUrl}}/voices/en-US-JennyNeural",
+                  "host": ["{{audioRendererUrl}}"],
+                  "path": ["voices", "en-US-JennyNeural"]
+                },
+                "description": "Deletes a voice by id. Returns 204 on success, 404 if not found."
+              },
+              "response": []
+            }
+          ]
+        },
+        {
+          "name": "TTS Tasks",
+          "item": [
+            {
+              "name": "Create TTS Task",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "exec": [
+                      "if (pm.response.code === 202) {",
+                      "    const body = pm.response.json();",
+                      "    pm.collectionVariables.set('ttsTaskId', body.taskId);",
+                      "    console.log('ttsTaskId saved:', body.taskId);",
+                      "}"
+                    ],
+                    "type": "text/javascript"
+                  }
+                }
+              ],
+              "request": {
+                "method": "POST",
+                "header": [
+                  { "key": "Content-Type", "value": "application/json" }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"segments\": [\n    {\n      \"segmentNumber\": 0,\n      \"text\": \"The letter arrived on a Tuesday, which Margaret always said was the worst day for surprises.\",\n      \"voiceId\": \"en-US-JennyNeural\",\n      \"transformationId\": \"test-transform-001\"\n    },\n    {\n      \"segmentNumber\": 1,\n      \"text\": \"You shouldn't have come here. Not after what happened in Oslo.\",\n      \"voiceId\": \"en-US-GuyNeural\",\n      \"transformationId\": \"test-transform-001\"\n    },\n    {\n      \"segmentNumber\": 2,\n      \"text\": \"I had no choice. You know that better than anyone.\",\n      \"voiceId\": \"en-US-AriaNeural\",\n      \"transformationId\": \"test-transform-001\"\n    }\n  ]\n}"
+                },
+                "url": {
+                  "raw": "{{audioRendererUrl}}/tts/tasks",
+                  "host": ["{{audioRendererUrl}}"],
+                  "path": ["tts", "tasks"]
+                },
+                "description": "Submits a batch TTS job directly to the Audio Renderer. Returns 202 immediately with a `taskId`. Saves `ttsTaskId` to collection variables automatically. Processing runs in the background."
+              },
+              "response": []
+            },
+            {
+              "name": "Get Task Status",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{audioRendererUrl}}/tts/tasks/{{ttsTaskId}}",
+                  "host": ["{{audioRendererUrl}}"],
+                  "path": ["tts", "tasks", "{{ttsTaskId}}"]
+                },
+                "description": "Returns the current status of a TTS task: PENDING, PROCESSING, COMPLETED, or FAILED."
+              },
+              "response": []
+            },
+            {
+              "name": "Get Task Content",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{audioRendererUrl}}/tts/tasks/{{ttsTaskId}}/content",
+                  "host": ["{{audioRendererUrl}}"],
+                  "path": ["tts", "tasks", "{{ttsTaskId}}", "content"]
+                },
+                "description": "Returns resolved segments with `audioUrl` for each once the task is COMPLETED."
+              },
+              "response": []
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

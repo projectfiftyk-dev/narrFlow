@@ -1,4 +1,4 @@
-# Interactive Multi-Persona Book Player
+# narrFlow — Interactive Multi-Persona Book Player
 
 An application that lets users assign AI-generated voices to characters in a book, then experience it as a fully synchronized audiobook — one distinct voice per character.
 
@@ -10,7 +10,7 @@ An application that lets users assign AI-generated voices to characters in a boo
 Login → Select Book → Create Transformation → Assign Personas → Generate Audio → Play Audiobook
 ```
 
-A user picks a book, maps each character to a voice persona, triggers audio generation, and plays back the result with text and audio synchronized in real time. All audio is pre-generated before playback begins — no streaming, no buffering mid-session.
+A user picks a book, maps each character to a voice persona, triggers audio generation, and plays back the result with text and audio synchronized. All audio is pre-generated before playback begins — no streaming, no buffering mid-session.
 
 ---
 
@@ -18,17 +18,17 @@ A user picks a book, maps each character to a voice persona, triggers audio gene
 
 ```
 ┌─────────────────────┐
-│   React Frontend    │  TypeScript — Player + Library UI
+│   React Frontend    │  TypeScript — Player + Library UI        port 5173
 └────────┬────────────┘
          │ REST / JWT
 ┌────────▼────────────┐
-│  Spring Boot API    │  Java — Orchestrator & Business Logic
+│  Spring Boot API    │  Java — Orchestrator & Business Logic    port 8080
 └────────┬────────────┘
          │ HTTP (internal)
 ┌────────▼────────────┐
-│  Audio Renderer     │  Python / FastAPI — TTS generation engine
+│  Audio Renderer     │  Python / FastAPI — TTS engine           port 8081
 └────────┬────────────┘
-         │
+         │ ElevenLabs API / local filesystem
 ┌────────▼────────────┐
 │      MongoDB        │  Document store — all persistent state
 └─────────────────────┘
@@ -38,7 +38,7 @@ A user picks a book, maps each character to a voice persona, triggers audio gene
 |-------|------|
 | React | User-facing UI — library, transformation builder, synchronized player |
 | Spring Boot | Single source of truth — auth, orchestration, all business logic |
-| Audio Renderer | Stateless audio engine — accepts tasks, returns MP3 files + URLs |
+| Audio Renderer | Stateless TTS engine — accepts tasks, synthesizes via ElevenLabs, returns MP3 files |
 | MongoDB | Persistent storage — books, users, transformations, content, TTS jobs |
 
 The frontend **never** contacts the Audio Renderer directly. Spring Boot owns all coordination.
@@ -47,11 +47,11 @@ The frontend **never** contacts the Audio Renderer directly. Spring Boot owns al
 
 ## Services
 
-| Service | Stack | Location |
-|---------|-------|----------|
-| Audio Renderer | Python · FastAPI · Motor | `services/audio-renderer-service/` |
-| Business API | Java · Spring Boot | *(not yet scaffolded)* |
-| Frontend | React · TypeScript | *(not yet scaffolded)* |
+| Service | Stack | Port | Location |
+|---------|-------|------|----------|
+| Audio Renderer | Python · FastAPI · Motor · ElevenLabs | 8081 | `services/audio-renderer-service/` |
+| Orchestrator | Java · Spring Boot · MongoDB | 8080 | `services/orchestrator-service/` |
+| Frontend | React · TypeScript · Vite | 5173 | `ui/` |
 
 ---
 
@@ -61,8 +61,10 @@ The frontend **never** contacts the Audio Renderer directly. Spring Boot owns al
 |------|---------|---------|
 | Python | 3.13 | Audio Renderer runtime |
 | uv | latest | Python package manager |
+| Java | 17 | Orchestrator runtime |
+| Node.js | 18+ | Frontend build |
 | MongoDB | 7+ | Shared database |
-| Azure Cognitive Services | — | TTS provider (Audio Renderer) |
+| ElevenLabs API key | — | TTS provider (Audio Renderer) |
 
 ---
 
@@ -91,17 +93,64 @@ cd services/audio-renderer-service
 
 # Copy and fill in credentials
 cp .env.example .env
+# Set ELEVENLABS_API_KEY in .env
 
-# Install dependencies (Python 3.13 required)
-uv sync --extra dev
+# Install dependencies
+uv sync
 
 # Start the service
-uv run uvicorn src.main:app --reload --port 8001
+uv run uvicorn src.main:app --reload --port 8081
 ```
 
-Swagger UI: `http://localhost:8001/docs`
+Swagger UI: `http://localhost:8081/docs`
 
-See [`services/audio-renderer-service/docs/service.md`](services/audio-renderer-service/docs/service.md) for full configuration reference and API documentation.
+See [`services/audio-renderer-service/docs/service.md`](services/audio-renderer-service/docs/service.md) for full configuration and API reference.
+
+---
+
+### 3. Orchestrator Service
+
+```bash
+cd services/orchestrator-service
+./mvnw spring-boot:run
+```
+
+API base: `http://localhost:8080/api/v1`
+
+---
+
+### 4. Frontend
+
+```bash
+cd ui
+npm install
+npm run dev
+```
+
+App: `http://localhost:5173`
+
+For environment-specific API URL, create `ui/.env.local`:
+
+```
+VITE_API_URL=http://localhost:8080
+```
+
+---
+
+## Exposing Services Externally (Cloudflare Tunnel)
+
+To access the app from another device (phone, remote machine) without deploying:
+
+```bash
+# Three separate terminals
+cloudflared tunnel --url http://localhost:5173   # frontend
+cloudflared tunnel --url http://localhost:8080   # orchestrator
+cloudflared tunnel --url http://localhost:8081   # audio renderer
+```
+
+Each command prints a `https://*.trycloudflare.com` URL. Set the orchestrator URL in `ui/.env.local` and the audio renderer URL in `services/orchestrator-service/src/main/resources/application.yml` under `tts.service.base-url`.
+
+> Note: Quick tunnel URLs change on every restart. For stable URLs, use a named Cloudflare Tunnel with a free account.
 
 ---
 
@@ -113,7 +162,9 @@ See [`services/audio-renderer-service/docs/service.md`](services/audio-renderer-
 
 **Pre-generated audio.** All audio is rendered before playback begins, making the player experience instant and buffer-free.
 
-**Personas live in Java, voices live in Python.** Python owns the TTS provider abstraction (raw Azure voice IDs). Java owns the user-facing layer (named personas, book scoping, character identity). Neither bleeds into the other's domain.
+**ElevenLabs via eleven_multilingual_v2.** The Audio Renderer uses ElevenLabs for TTS synthesis. Voices are fetched live from the ElevenLabs API and support language filtering (e.g. `GET /voices?language=ro` for Romanian).
+
+**Personas live in Java, voices live in Python.** Python owns the TTS provider abstraction (ElevenLabs voice IDs). Java owns the user-facing layer (named personas, book scoping, character identity).
 
 ---
 

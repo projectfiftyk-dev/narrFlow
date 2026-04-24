@@ -1,23 +1,51 @@
 import { useEffect, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import { fetchContent } from '../api/content';
+import { fetchTransformation } from '../api/transformations';
 import { PlayerControls } from '../components/PlayerControls';
+import { StatusBadge } from '../components/StatusBadge';
+import { useAppStore } from '../store/useAppStore';
 
+function localAudioUrl(audioUri: string): string {
+  try {
+    return new URL(audioUri).pathname;
+  } catch {
+    return audioUri;
+  }
+}
 
 export function PlayerPage() {
-  const { contentId } = useParams<{ contentId: string }>();
   const navigate = useNavigate();
+  const activeId = useAppStore((s) => s.activeTransformationId);
   const audioRef = useRef<HTMLAudioElement>(null);
 
   const [currentIndex, setCurrentIndex] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
   const [audioError, setAudioError] = useState<string | null>(null);
 
-  const { data: content, isLoading, isError } = useQuery({
-    queryKey: ['content', contentId],
-    queryFn: () => fetchContent(contentId!),
-    enabled: !!contentId,
+  // Reset position when active transformation changes
+  useEffect(() => {
+    setCurrentIndex(0);
+    setIsPlaying(false);
+    setAudioError(null);
+    audioRef.current?.pause();
+  }, [activeId]);
+
+  const { data: transformation, isLoading: loadingTransform } = useQuery({
+    queryKey: ['transformation', activeId],
+    queryFn: () => fetchTransformation(activeId!),
+    enabled: !!activeId,
+    refetchInterval: (query) => {
+      const status = query.state.data?.status;
+      return status === 'GENERATING' ? 3000 : false;
+    },
+  });
+
+  const { data: content, isLoading: loadingContent } = useQuery({
+    queryKey: ['content', activeId],
+    queryFn: () => fetchContent(activeId!),
+    enabled: transformation?.status === 'DONE',
   });
 
   const items = content?.items ?? [];
@@ -27,8 +55,7 @@ export function PlayerPage() {
     const audio = audioRef.current;
     if (!audio || !current?.audioUri) return;
     setAudioError(null);
-    audio.volume = 1;
-    audio.src = current.audioUri;
+    audio.src = localAudioUrl(current.audioUri);
     audio.load();
     if (isPlaying) {
       audio.play().catch((err) => {
@@ -78,89 +105,172 @@ export function PlayerPage() {
     if (isPlaying) setTimeout(() => audioRef.current?.play().catch(() => {}), 50);
   };
 
-  return (
-    <div
-      style={{
-        minHeight: '100vh',
-        background: 'linear-gradient(160deg, #1a202c 0%, #2d3748 100%)',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        padding: 24,
-      }}
-    >
-      <div style={{ width: '100%', maxWidth: 680 }}>
+  // No active transformation
+  if (!activeId) {
+    return (
+      <div style={{ maxWidth: 600, margin: '0 auto', padding: '80px 24px', textAlign: 'center' }}>
+        <div style={{ fontSize: 48, marginBottom: 16 }}>▶</div>
+        <h2 style={{ margin: '0 0 12px', color: '#2d3748' }}>No transformation selected</h2>
+        <p style={{ color: '#718096', fontSize: 14, marginBottom: 24 }}>
+          Go to Transformations and select one to play, or create a new one.
+        </p>
         <button
-          onClick={() => navigate('/books')}
-          style={{ background: 'none', border: 'none', color: '#a0aec0', cursor: 'pointer', fontSize: 14, marginBottom: 24, padding: 0 }}
+          onClick={() => navigate('/transformations')}
+          style={{
+            padding: '10px 20px',
+            background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+            color: '#fff',
+            border: 'none',
+            borderRadius: 8,
+            fontSize: 14,
+            fontWeight: 600,
+            cursor: 'pointer',
+            marginRight: 8,
+          }}
         >
-          ← Library
+          View Transformations
         </button>
+      </div>
+    );
+  }
 
-        {isLoading && (
-          <div style={{ color: '#a0aec0', textAlign: 'center', padding: 60 }}>Loading player…</div>
+  if (loadingTransform) {
+    return (
+      <div style={{ textAlign: 'center', color: '#a0aec0', padding: 60 }}>Loading…</div>
+    );
+  }
+
+  // Non-DONE states
+  if (transformation && transformation.status !== 'DONE') {
+    return (
+      <div style={{ maxWidth: 600, margin: '0 auto', padding: '60px 24px', textAlign: 'center' }}>
+        <div style={{ marginBottom: 16 }}>
+          <StatusBadge status={transformation.status} />
+        </div>
+        {transformation.status === 'GENERATING' && (
+          <>
+            <div style={{ fontSize: 48, marginBottom: 16 }}>⏳</div>
+            <h2 style={{ margin: '0 0 8px', color: '#2d3748' }}>Generating Audio…</h2>
+            <p style={{ color: '#a0aec0', fontSize: 14 }}>This page will update automatically.</p>
+          </>
         )}
-
-        {isError && (
-          <div style={{ background: '#fff5f5', color: '#c53030', padding: 16, borderRadius: 8 }}>
-            Failed to load content.
-          </div>
+        {transformation.status === 'FAILED' && (
+          <>
+            <div style={{ fontSize: 48, marginBottom: 16 }}>✗</div>
+            <h2 style={{ margin: '0 0 8px', color: '#c53030' }}>Generation Failed</h2>
+            <p style={{ color: '#718096', fontSize: 14 }}>Please create a new transformation.</p>
+          </>
         )}
-
-        {content && current && (
-          <div
-            style={{
-              background: '#fff',
-              borderRadius: 16,
-              padding: 40,
-              boxShadow: '0 20px 60px rgba(0,0,0,0.4)',
-            }}
-          >
-            <div style={{ marginBottom: 24 }}>
-              <h2 style={{ margin: '0 0 4px', fontSize: 22, color: '#1a202c' }}>📖 Book Player</h2>
-              <div style={{ fontSize: 13, color: '#718096' }}>
-                🎭 Persona: <strong>{current.personaId}</strong>
-              </div>
-            </div>
-
-            <div
+        {(transformation.status === 'DRAFT' || transformation.status === 'VOICE_ASSIGNMENT') && (
+          <>
+            <div style={{ fontSize: 48, marginBottom: 16 }}>✏️</div>
+            <h2 style={{ margin: '0 0 8px', color: '#2d3748' }}>Not ready yet</h2>
+            <p style={{ color: '#718096', fontSize: 14, marginBottom: 24 }}>
+              This transformation hasn&apos;t been generated. Go to New Transformation to continue.
+            </p>
+            <button
+              onClick={() => navigate('/new-transformation')}
               style={{
-                background: '#f7fafc',
-                borderRadius: 12,
-                padding: '28px 32px',
-                marginBottom: 32,
-                minHeight: 140,
+                padding: '10px 20px',
+                background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+                color: '#fff',
+                border: 'none',
+                borderRadius: 8,
+                fontSize: 14,
+                fontWeight: 600,
+                cursor: 'pointer',
               }}
             >
-              <p style={{ margin: 0, fontSize: 17, lineHeight: 1.8, color: '#2d3748' }}>
-                {current.text}
-              </p>
-            </div>
-
-            <PlayerControls
-              isPlaying={isPlaying}
-              onPlay={handlePlay}
-              onPause={handlePause}
-              onNext={handleNext}
-              onPrev={handlePrev}
-              canPrev={currentIndex > 0}
-              canNext={currentIndex < items.length - 1}
-            />
-
-            <div style={{ textAlign: 'center', marginTop: 16, color: '#a0aec0', fontSize: 13 }}>
-              Section {currentIndex + 1} of {items.length}
-            </div>
-
-            {audioError && (
-              <div style={{ marginTop: 16, background: '#fff5f5', color: '#c53030', padding: '10px 14px', borderRadius: 8, fontSize: 13 }}>
-                ⚠️ {audioError}
-              </div>
-            )}
-
-            <audio ref={audioRef} style={{ display: 'none' }} />
-          </div>
+              Continue in New Transformation
+            </button>
+          </>
         )}
       </div>
+    );
+  }
+
+  // DONE — show player
+  if (loadingContent) {
+    return (
+      <div style={{ textAlign: 'center', color: '#a0aec0', padding: 60 }}>Loading content…</div>
+    );
+  }
+
+  return (
+    <div style={{ maxWidth: 680, margin: '0 auto', padding: '40px 24px' }}>
+      {content && current && (
+        <div
+          style={{
+            background: '#fff',
+            borderRadius: 16,
+            padding: 40,
+            boxShadow: '0 4px 24px rgba(0,0,0,0.08)',
+          }}
+        >
+          <div style={{ marginBottom: 24 }}>
+            <h2 style={{ margin: '0 0 4px', fontSize: 20, color: '#1a202c' }}>Book Player</h2>
+            <div style={{ fontSize: 13, color: '#718096' }}>
+              {current.sectionName && (
+                <span>
+                  <strong>{current.sectionName}</strong> ·{' '}
+                </span>
+              )}
+              Author: <strong>{current.author}</strong>
+            </div>
+          </div>
+
+          <div
+            style={{
+              background: '#f7fafc',
+              borderRadius: 12,
+              padding: '28px 32px',
+              marginBottom: 32,
+              minHeight: 140,
+            }}
+          >
+            <p style={{ margin: 0, fontSize: 17, lineHeight: 1.8, color: '#2d3748' }}>
+              {current.text}
+            </p>
+          </div>
+
+          <PlayerControls
+            isPlaying={isPlaying}
+            onPlay={handlePlay}
+            onPause={handlePause}
+            onNext={handleNext}
+            onPrev={handlePrev}
+            canPrev={currentIndex > 0}
+            canNext={currentIndex < items.length - 1}
+          />
+
+          <div style={{ textAlign: 'center', marginTop: 16, color: '#a0aec0', fontSize: 13 }}>
+            Segment {currentIndex + 1} of {items.length}
+          </div>
+
+          {audioError && (
+            <div
+              style={{
+                marginTop: 16,
+                background: '#fff5f5',
+                color: '#c53030',
+                padding: '10px 14px',
+                borderRadius: 8,
+                fontSize: 13,
+              }}
+            >
+              {audioError}
+            </div>
+          )}
+
+          <audio ref={audioRef} style={{ display: 'none' }} />
+        </div>
+      )}
+
+      {content && items.length === 0 && (
+        <div style={{ textAlign: 'center', color: '#a0aec0', padding: 60 }}>
+          No audio segments found.
+        </div>
+      )}
     </div>
   );
 }

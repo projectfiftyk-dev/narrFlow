@@ -1,11 +1,10 @@
 import { useState, useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useParams } from 'react-router-dom';
 import { fetchBooks, fetchBookSections } from '../api/books';
 
 export function BookViewerPage() {
   const { bookId } = useParams<{ bookId: string }>();
-  const navigate = useNavigate();
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
 
   // Get book title from the already-cached library list
@@ -35,21 +34,6 @@ export function BookViewerPage() {
 
   return (
     <div style={{ maxWidth: 760, margin: '0 auto', padding: '40px 24px' }}>
-      <button
-        onClick={() => navigate('/books')}
-        style={{
-          background: 'none',
-          border: 'none',
-          color: '#667eea',
-          cursor: 'pointer',
-          fontSize: 14,
-          marginBottom: 24,
-          padding: 0,
-        }}
-      >
-        ← Back to Library
-      </button>
-
       {isLoading && (
         <div style={{ color: '#a0aec0', padding: 40, textAlign: 'center' }}>Loading…</div>
       )}
@@ -67,36 +51,9 @@ export function BookViewerPage() {
 
       {sections && (
         <>
-          {/* Header */}
-          <div
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              marginBottom: 32,
-              flexWrap: 'wrap',
-              gap: 12,
-            }}
-          >
-            <h1 style={{ margin: 0, fontSize: 26, color: '#1a202c' }}>
-              📖 {book?.title ?? 'Book'}
-            </h1>
-            <button
-              onClick={() => navigate(`/transformations/${bookId}`)}
-              style={{
-                background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-                color: '#fff',
-                border: 'none',
-                borderRadius: 8,
-                padding: '10px 18px',
-                fontSize: 14,
-                fontWeight: 600,
-                cursor: 'pointer',
-              }}
-            >
-              🎭 Create Transformation
-            </button>
-          </div>
+          <h1 style={{ margin: '0 0 32px', fontSize: 26, color: '#1a202c' }}>
+            📖 {book?.title ?? 'Book'}
+          </h1>
 
           {sections.length === 0 && (
             <div style={{ color: '#a0aec0', padding: '40px 0', textAlign: 'center' }}>

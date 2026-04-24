@@ -1,20 +1,20 @@
 import { api } from './axios';
-import type { Transformation, PersonaMapping } from '../types';
+import type { Transformation } from '../types';
 
 export const fetchTransformation = (id: string): Promise<Transformation> =>
   api.get(`/transformations/${id}`).then((r) => r.data);
 
-export const fetchTransformationsForBook = (bookId: string): Promise<Transformation[]> =>
-  api.get(`/transformations?bookId=${bookId}`).then((r) => r.data);
+export const fetchTransformations = (): Promise<Transformation[]> =>
+  api.get('/transformations').then((r) => r.data);
 
 export const createTransformation = (bookId: string): Promise<Transformation> =>
   api.post('/transformations', { bookId }).then((r) => r.data);
 
-export const savePersonaMapping = (
+export const saveVoiceMapping = (
   id: string,
-  personaMapping: PersonaMapping
+  voiceMapping: Record<string, string>
 ): Promise<Transformation> =>
-  api.put(`/transformations/${id}/personas`, { personaMapping }).then((r) => r.data);
+  api.put(`/transformations/${id}/voices`, { voiceMapping }).then((r) => r.data);
 
-export const triggerGeneration = (id: string): Promise<Transformation> =>
-  api.post(`/transformations/${id}/generate`).then((r) => r.data);
+export const triggerGeneration = (id: string): Promise<void> =>
+  api.post(`/transformations/${id}/generate`).then(() => undefined);

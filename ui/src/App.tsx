@@ -3,26 +3,70 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { LoginPage } from './pages/LoginPage';
 import { BooksLibraryPage } from './pages/BooksLibraryPage';
 import { BookViewerPage } from './pages/BookViewerPage';
-import { TransformationBuilderPage } from './pages/TransformationBuilderPage';
+import { NewTransformationPage } from './pages/NewTransformationPage';
+import { TransformationsListPage } from './pages/TransformationsListPage';
 import { PlayerPage } from './pages/PlayerPage';
+import { AppLayout } from './components/AppLayout';
 
 const queryClient = new QueryClient({
   defaultOptions: { queries: { retry: 1, staleTime: 30_000 } },
 });
 
+function AppRoutes() {
+  return (
+    <Routes>
+      <Route path="/" element={<Navigate to="/books" replace />} />
+      <Route path="/login" element={<LoginPage />} />
+      <Route
+        path="/books"
+        element={
+          <AppLayout>
+            <BooksLibraryPage />
+          </AppLayout>
+        }
+      />
+      <Route
+        path="/books/:bookId"
+        element={
+          <AppLayout>
+            <BookViewerPage />
+          </AppLayout>
+        }
+      />
+      <Route
+        path="/new-transformation"
+        element={
+          <AppLayout>
+            <NewTransformationPage />
+          </AppLayout>
+        }
+      />
+      <Route
+        path="/transformations"
+        element={
+          <AppLayout>
+            <TransformationsListPage />
+          </AppLayout>
+        }
+      />
+      <Route
+        path="/player"
+        element={
+          <AppLayout>
+            <PlayerPage />
+          </AppLayout>
+        }
+      />
+      <Route path="*" element={<Navigate to="/books" replace />} />
+    </Routes>
+  );
+}
+
 export default function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <BrowserRouter>
-        <Routes>
-          <Route path="/" element={<Navigate to="/login" replace />} />
-          <Route path="/login" element={<LoginPage />} />
-          <Route path="/books" element={<BooksLibraryPage />} />
-          <Route path="/books/:bookId" element={<BookViewerPage />} />
-          <Route path="/transformations/:bookId" element={<TransformationBuilderPage />} />
-          <Route path="/content/:contentId" element={<PlayerPage />} />
-          <Route path="*" element={<Navigate to="/login" replace />} />
-        </Routes>
+        <AppRoutes />
       </BrowserRouter>
     </QueryClientProvider>
   );

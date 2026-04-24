@@ -3,7 +3,7 @@ import logging
 from datetime import datetime, timezone
 from functools import partial
 
-import azure.cognitiveservices.speech as speechsdk
+from elevenlabs import ElevenLabs
 
 from ..config import settings
 from ..database import get_db
@@ -14,27 +14,24 @@ logger = logging.getLogger(__name__)
 
 
 def _synthesize_segment(text: str, voice_id: str, output_path: str) -> None:
-    """Blocking Azure TTS call — runs in a thread pool executor."""
-    speech_config = speechsdk.SpeechConfig(
-        subscription=settings.AZURE_SPEECH_KEY,
-        region=settings.AZURE_SPEECH_REGION,
+    """Blocking ElevenLabs TTS call — runs in a thread pool executor."""
+    client = ElevenLabs(api_key=settings.ELEVENLABS_API_KEY)
+    audio = client.text_to_speech.convert(
+        voice_id=voice_id,
+        text=text,
+        model_id=settings.ELEVENLABS_MODEL,
+        output_format="mp3_44100_128",
     )
-    speech_config.speech_synthesis_voice_name = voice_id
-    audio_config = speechsdk.audio.AudioOutputConfig(filename=output_path)
-    synthesizer = speechsdk.SpeechSynthesizer(
-        speech_config=speech_config, audio_config=audio_config
-    )
-    result = synthesizer.speak_text_async(text).get()
-    if result.reason != speechsdk.ResultReason.SynthesizingAudioCompleted:
-        details = result.cancellation_details
-        raise RuntimeError(
-            f"Azure TTS failed for voice '{voice_id}': {details.error_details}"
-        )
+    with open(output_path, "wb") as f:
+        for chunk in audio:
+            f.write(chunk)
 
 
 async def process_tts_task(task_id: str, segments: list[SegmentInput]) -> None:
     db = get_db()
     now = datetime.now(timezone.utc)
+
+    logger.info("Task %s starting processing — %d segment(s)", task_id, len(segments))
 
     await db.tts_tasks.update_one(
         {"taskId": task_id},
@@ -46,6 +43,10 @@ async def process_tts_task(task_id: str, segments: list[SegmentInput]) -> None:
 
     try:
         for segment in sorted(segments, key=lambda s: s.segmentNumber):
+            logger.debug(
+                "Task %s — synthesizing segment %d with voice '%s'",
+                task_id, segment.segmentNumber, segment.voiceId,
+            )
             out_path = audio_file_path(task_id, segment.segmentNumber)
             await loop.run_in_executor(
                 None,
@@ -57,6 +58,7 @@ async def process_tts_task(task_id: str, segments: list[SegmentInput]) -> None:
                     audioUrl=audio_url(task_id, segment.segmentNumber),
                 )
             )
+            logger.debug("Task %s — segment %d done", task_id, segment.segmentNumber)
 
         await db.tts_tasks.update_one(
             {"taskId": task_id},

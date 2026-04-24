@@ -1,17 +1,17 @@
 import type { Voice } from '../types';
 
 interface Props {
-  sectionId: string;
+  itemKey: string;
   voices: Voice[];
   value: string;
-  onChange: (sectionId: string, voiceId: string) => void;
+  onChange: (key: string, voiceId: string) => void;
 }
 
-export function PersonaSelector({ sectionId, voices, value, onChange }: Props) {
+export function PersonaSelector({ itemKey, voices, value, onChange }: Props) {
   return (
     <select
       value={value}
-      onChange={(e) => onChange(sectionId, e.target.value)}
+      onChange={(e) => onChange(itemKey, e.target.value)}
       style={{
         padding: '4px 8px',
         borderRadius: 6,

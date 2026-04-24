@@ -11,7 +11,7 @@ export function BooksLibraryPage() {
     <div style={{ maxWidth: 900, margin: '0 auto', padding: '40px 24px' }}>
       <div style={{ marginBottom: 32 }}>
         <h1 style={{ margin: '0 0 8px', fontSize: 28, color: '#1a202c' }}>📚 Books Library</h1>
-        <p style={{ margin: 0, color: '#718096' }}>Select a book to read or create a transformation</p>
+        <p style={{ margin: 0, color: '#718096', fontSize: 14 }}>Select a book to browse its contents.</p>
       </div>
 
       {isLoading && (

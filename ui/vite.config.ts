@@ -4,11 +4,15 @@ import fs from 'fs';
 import path from 'path';
 
 const TTS_STORAGE = path.resolve(
-  'C:/Users/aflorescu/MyCode/secret_DONT_Touch/services/audio-renderer-service/tts-storage'
+  'C:/Users/aflorescu/MyCode/narrFlow/narrFlow/services/audio-renderer-service/tts-storage'
 );
 
 // https://vite.dev/config/
 export default defineConfig({
+  server: {
+    host: true,
+    allowedHosts: true,
+  },
   plugins: [
     react(),
     {

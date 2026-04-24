@@ -1,8 +1,8 @@
 # Audio Renderer Service
 
 > **Role:** Stateless batch TTS engine with job tracking
-> **Stack:** Python 3.13 · FastAPI · Motor (MongoDB) · Azure Cognitive Services Speech SDK
-> **Status:** MVP — implemented and tested
+> **Stack:** Python 3.13 · FastAPI · Motor (MongoDB) · ElevenLabs SDK
+> **Status:** MVP — implemented
 
 ---
 
@@ -12,10 +12,10 @@ The Audio Renderer does exactly two things:
 
 | Responsibility | Description |
 |---------------|-------------|
-| Voice Registry | CRUD management of available TTS voices |
+| Voice Registry | Proxies ElevenLabs voices API and returns them in a normalized format |
 | Audio Generation | Converts batches of text segments into MP3 files, asynchronously |
 
-It is not a streaming engine, not an AI assistant, and not a real-time synthesizer. It accepts a batch of text segments, synthesizes each one with Azure TTS, writes MP3 files to disk, and makes the results available for polling.
+It is not a streaming engine, not an AI assistant, and not a real-time synthesizer. It accepts a batch of text segments, synthesizes each one via ElevenLabs, writes MP3 files to disk, and makes the results available for polling.
 
 Spring Boot calls this service. The frontend never contacts it directly.
 
@@ -25,14 +25,16 @@ Spring Boot calls this service. The frontend never contacts it directly.
 
 ### Voice Registry
 
-- Four Azure Neural voices are seeded automatically on startup.
-- Voices can be created, updated, and deleted at runtime (admin operation — no auth enforced at this layer; access control is Spring Boot's responsibility).
-- The voice `id` field must exactly match the Azure TTS voice name (e.g. `en-US-JennyNeural`). All other fields are metadata.
+- `GET /voices` calls the ElevenLabs API live and returns normalized voice objects.
+- An optional `?language=` query param (BCP-47 code) filters by language — e.g. `?language=ro` for Romanian, `?language=en` for English.
+- The voice `id` field is the ElevenLabs `voice_id`. Slug is derived from the voice name (lowercase, underscored). Description comes from the ElevenLabs `labels.description` field.
+- Voices can also be created, updated, and deleted in the local MongoDB registry for custom overrides (admin operation — no auth enforced at this layer).
 
 ### TTS Job Engine
 
 - Accepts a batch of text segments in a single request and returns a `taskId` immediately (`202 Accepted`).
-- Processes segments in the background using FastAPI `BackgroundTasks` + `asyncio` thread pool (Azure SDK is blocking; it runs in an executor to avoid blocking the event loop).
+- Processes segments in the background using FastAPI `BackgroundTasks` + `asyncio` thread pool (ElevenLabs SDK is blocking; it runs in an executor to avoid blocking the event loop).
+- Synthesizes with the `eleven_multilingual_v2` model by default (configurable via `ELEVENLABS_MODEL`).
 - Writes one MP3 file per segment: `tts-storage/{taskId}/{segmentNumber}.mp3`.
 - Exposes a status polling endpoint and a convenience resolved-content endpoint.
 - Job state is tracked in MongoDB. The filesystem holds only the binary audio files.
@@ -40,26 +42,11 @@ Spring Boot calls this service. The frontend never contacts it directly.
 ### What is NOT implemented (MVP scope)
 
 - No authentication or authorization (delegated to Spring Boot).
-- No tone processing — text is sent to Azure TTS as plain text.
+- No tone processing — text is sent to ElevenLabs as plain text.
 - No retry logic on failed segments.
 - No S3 or CDN storage — local filesystem only.
 - No message broker (no Celery, no RabbitMQ).
 - No duplicate job detection.
-
----
-
-## Hardcoded Voices
-
-These four voices are seeded into MongoDB on every startup via `$setOnInsert` (idempotent):
-
-| id (Azure voice name) | slug | friendly_name |
-|-----------------------|------|---------------|
-| `en-US-JennyNeural` | `calm_female` | Calm Female Narrator |
-| `en-US-GuyNeural` | `deep_male` | Deep Male Narrator |
-| `en-US-AriaNeural` | `expressive_female` | Expressive Female |
-| `en-US-DavisNeural` | `casual_male` | Casual Male |
-
-Additional voices can be added at runtime via `POST /voices`.
 
 ---
 
@@ -79,15 +66,31 @@ Additional voices can be added at runtime via `POST /voices`.
 
 #### `GET /voices`
 
-Returns all registered voices.
+Fetches voices live from ElevenLabs and returns them in normalized format.
+
+Optional query param: `?language=<BCP-47 code>` — filters by language using ElevenLabs v2 search.
+
+```
+GET /voices          → all voices
+GET /voices?language=ro  → Romanian voices
+GET /voices?language=en  → English voices
+```
+
+**Response:**
 
 ```json
 [
   {
-    "id": "en-US-JennyNeural",
-    "slug": "calm_female",
-    "friendly_name": "Calm Female Narrator",
-    "description": "Soft, neutral female narration voice"
+    "id": "EXAVITQu4vr4xnSDxMaL",
+    "slug": "sarah",
+    "friendlyName": "Sarah",
+    "description": "Mature, reassuring, confident"
+  },
+  {
+    "id": "JBFqnCBsd6RMkjVDRZzb",
+    "slug": "george",
+    "friendlyName": "George",
+    "description": "Warm, captivating storyteller"
   }
 ]
 ```
@@ -96,14 +99,14 @@ Returns all registered voices.
 
 #### `POST /voices` → `201 Created`
 
-Registers a new voice. `id` must be a valid Azure TTS voice name.
+Registers a custom voice in the local MongoDB registry. `id` must be a valid ElevenLabs `voice_id`.
 
 ```json
 {
-  "id": "en-US-BrandonNeural",
-  "slug": "warm_male",
-  "friendly_name": "Warm Male",
-  "description": "Warm, engaging male voice"
+  "id": "EXAVITQu4vr4xnSDxMaL",
+  "slug": "sarah_narrator",
+  "friendlyName": "Sarah – Narrator",
+  "description": "Mature, reassuring female voice"
 }
 ```
 
@@ -113,10 +116,10 @@ Returns `409` if a voice with that `id` already exists.
 
 #### `PUT /voices/{id}` → `200 OK`
 
-Updates metadata fields (`slug`, `friendly_name`, `description`). The `id` is immutable.
+Updates metadata fields (`slug`, `friendlyName`, `description`). The `id` is immutable.
 
 ```json
-{ "friendly_name": "Updated Name" }
+{ "friendlyName": "Updated Name" }
 ```
 
 Returns `404` if the voice does not exist. Returns `422` if the request body contains no updatable fields.
@@ -125,7 +128,7 @@ Returns `404` if the voice does not exist. Returns `422` if the request body con
 
 #### `DELETE /voices/{id}` → `204 No Content`
 
-Removes a voice from the registry. Returns `404` if not found.
+Removes a voice from the local registry. Returns `404` if not found.
 
 ---
 
@@ -143,14 +146,14 @@ Submits a batch of text segments for audio generation. Returns immediately.
     {
       "segmentNumber": 0,
       "text": "It was a dark and stormy night.",
-      "voiceId": "en-US-JennyNeural",
+      "voiceId": "EXAVITQu4vr4xnSDxMaL",
       "personaId": "persona_abc",
       "transformationId": "transform_001"
     },
     {
       "segmentNumber": 1,
       "text": "She whispered his name into the silence.",
-      "voiceId": "en-US-GuyNeural",
+      "voiceId": "JBFqnCBsd6RMkjVDRZzb",
       "personaId": "persona_xyz",
       "transformationId": "transform_001"
     }
@@ -158,7 +161,7 @@ Submits a batch of text segments for audio generation. Returns immediately.
 }
 ```
 
-All fields except `segmentNumber`, `text`, and `voiceId` are optional metadata passed through and echoed back in the content endpoint.
+All fields except `segmentNumber`, `text`, and `voiceId` are optional metadata echoed back in the content endpoint.
 
 **Response:**
 
@@ -197,7 +200,7 @@ Polls the status of a job.
 {
   "taskId": "...",
   "status": "FAILED",
-  "error": "Azure TTS failed for voice 'en-US-JennyNeural': ..."
+  "error": "ElevenLabs API error: quota_exceeded"
 }
 ```
 
@@ -207,7 +210,7 @@ Returns `404` if the task does not exist.
 
 #### `GET /tts/tasks/{taskId}/content`
 
-Convenience endpoint for Spring Boot. Returns the fully resolved, playback-ready payload once the job is `COMPLETED` — segments merged with their audio URLs and original metadata. Spring Boot uses this to assemble the `Content` object without manual aggregation.
+Convenience endpoint for Spring Boot. Returns the fully resolved, playback-ready payload once the job is `COMPLETED` — segments merged with their audio URLs and original metadata.
 
 **Response (COMPLETED):**
 
@@ -221,12 +224,6 @@ Convenience endpoint for Spring Boot. Returns the fully resolved, playback-ready
       "text": "It was a dark and stormy night.",
       "personaId": "persona_abc",
       "audioUrl": "/audio/550e.../0.mp3"
-    },
-    {
-      "segmentNumber": 1,
-      "text": "She whispered his name into the silence.",
-      "personaId": "persona_xyz",
-      "audioUrl": "/audio/550e.../1.mp3"
     }
   ]
 }
@@ -241,8 +238,6 @@ Convenience endpoint for Spring Boot. Returns the fully resolved, playback-ready
 #### `GET /audio/{taskId}/{segmentNumber}.mp3`
 
 Serves the generated audio file directly. Mounted as a FastAPI `StaticFiles` route.
-
-Audio URLs returned by the task endpoints are ready to use as-is against this service's base URL.
 
 ---
 
@@ -274,11 +269,9 @@ tts-storage/
     2.mp3
 ```
 
-File naming is deterministic (`{segmentNumber}.mp3`) so re-runs of the same task safely overwrite rather than orphan files.
+File naming is deterministic (`{segmentNumber}.mp3`) so re-runs safely overwrite rather than orphan files.
 
-MongoDB stores job metadata, status, payload, and result URLs. The filesystem holds only binary MP3 files. Files are considered disposable derivatives — they are regenerable from the job payload at any time.
-
-When the project outgrows local storage, only the storage layer needs to change. The `audioUrl` abstraction in the API contract means the frontend requires zero changes.
+MongoDB stores job metadata, status, payload, and result URLs. The filesystem holds only binary MP3 files. Files are disposable derivatives — regenerable from the job payload at any time.
 
 ---
 
@@ -288,44 +281,48 @@ All configuration is via environment variables. Copy `.env.example` to `.env` an
 
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
-| `AZURE_SPEECH_KEY` | Yes | — | Azure Cognitive Services subscription key |
-| `AZURE_SPEECH_REGION` | Yes | `eastus` | Azure region (e.g. `westeurope`, `eastus`) |
+| `ELEVENLABS_API_KEY` | Yes | — | ElevenLabs API key (needs `voices_read` + `text_to_speech` permissions) |
+| `ELEVENLABS_MODEL` | No | `eleven_multilingual_v2` | ElevenLabs model ID |
 | `MONGODB_URL` | No | `mongodb://localhost:27017` | MongoDB connection string |
 | `MONGODB_DB_NAME` | No | `audio_renderer` | Database name |
 | `AUDIO_STORAGE_PATH` | No | `tts-storage` | Local directory for MP3 files |
 | `AUDIO_BASE_URL` | No | `/audio` | URL prefix embedded in returned `audioUrl` values |
 
+### ElevenLabs API Key Permissions
+
+When creating your API key in the ElevenLabs dashboard, enable:
+- **Voices (read)** — required for `GET /voices`
+- **Text to Speech** — required for audio synthesis
+
 ---
 
 ## Running Locally
 
-**Prerequisites:** Python 3.13, `uv`, a running MongoDB instance, an Azure Cognitive Services Speech resource.
+**Prerequisites:** Python 3.13, `uv`, a running MongoDB instance, an ElevenLabs API key.
 
 ```bash
 cd services/audio-renderer-service
 
 # Configure
 cp .env.example .env
-# edit .env — set AZURE_SPEECH_KEY and AZURE_SPEECH_REGION
+# edit .env — set ELEVENLABS_API_KEY
 
 # Install
-uv sync --extra dev
+uv sync
 
 # Start (hot reload)
-uv run uvicorn src.main:app --reload --port 8001
+uv run uvicorn src.main:app --reload --port 8081
 ```
 
-Swagger UI: `http://localhost:8001/docs`
+Swagger UI: `http://localhost:8081/docs`
 
-On startup the service:
-1. Creates the `tts-storage/` directory if it does not exist.
-2. Seeds the four hardcoded Azure voices into MongoDB (idempotent).
+On startup the service creates the `tts-storage/` directory if it does not exist.
 
 ---
 
 ## Running Tests
 
-Tests run fully offline — MongoDB is replaced with an in-memory mock (`mongomock-motor`) and the Azure TTS call is patched out.
+Tests run fully offline — MongoDB is replaced with an in-memory mock (`mongomock-motor`) and the ElevenLabs SDK call is patched out.
 
 ```bash
 # Run all tests
@@ -339,28 +336,6 @@ uv run pytest tests/test_voices.py -v
 uv run pytest tests/services/test_tts.py -v
 ```
 
-### Test structure
-
-```
-tests/
-  conftest.py                  # shared fixtures
-  test_voices.py               # voice CRUD endpoint tests
-  test_tasks.py                # task creation, polling, content endpoint
-  services/
-    test_tts.py                # TTS worker unit tests (Azure SDK mocked)
-    test_storage.py            # path and URL helper tests
-```
-
-### Key fixtures (`conftest.py`)
-
-| Fixture | What it does |
-|---------|-------------|
-| `mock_db` | In-memory MongoDB via `mongomock-motor` |
-| `patch_db` | Replaces `get_db()` in all routers and services with `mock_db` |
-| `patch_worker` | Replaces `process_tts_task` with an `AsyncMock` — prevents the background worker from running during HTTP-level tests |
-| `patch_tts` | Replaces `_synthesize_segment` with a no-op — used in direct service tests |
-| `http_client` | `httpx.AsyncClient` wired to the FastAPI app via `ASGITransport` |
-
 ---
 
 ## Project Structure
@@ -371,13 +346,13 @@ src/
   config.py          # Environment-based settings (pydantic-settings)
   database.py        # Motor async MongoDB client singleton
   models/
-    voice.py         # Voice schema + hardcoded voice list
+    voice.py         # Voice schema
     task.py          # TTSTask, SegmentInput/Result, status enum, response models
-  routers/
-    voices.py        # GET/POST/PUT/DELETE /voices
-    tasks.py         # POST/GET /tts/tasks, GET /tts/tasks/{id}/content
+  controllers/
+    voices_controller.py   # GET/POST/PUT/DELETE /voices
+    tasks_controller.py    # POST/GET /tts/tasks, GET /tts/tasks/{id}/content
   services/
-    tts.py           # Background worker: Azure TTS synthesis, job state machine
+    tts.py           # Background worker: ElevenLabs synthesis, job state machine
     storage.py       # File path and URL helpers
 tests/
   conftest.py

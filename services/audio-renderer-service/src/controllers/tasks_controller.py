@@ -1,3 +1,4 @@
+import logging
 import uuid
 from datetime import datetime, timezone
 
@@ -15,6 +16,8 @@ from ..models.task import (
 )
 from ..services.tts import process_tts_task
 
+logger = logging.getLogger(__name__)
+
 router = APIRouter(prefix="/tts/tasks", tags=["tasks"])
 
 
@@ -23,6 +26,8 @@ async def create_task(payload: TTSTaskCreate, background_tasks: BackgroundTasks)
     db = get_db()
     task_id = str(uuid.uuid4())
     now = datetime.now(timezone.utc)
+
+    logger.info("Creating TTS task %s with %d segments", task_id, len(payload.segments))
 
     task = TTSTask(
         taskId=task_id,
@@ -34,17 +39,21 @@ async def create_task(payload: TTSTaskCreate, background_tasks: BackgroundTasks)
     await db.tts_tasks.insert_one(task.model_dump())
 
     background_tasks.add_task(process_tts_task, task_id, payload.segments)
+    logger.info("Task %s accepted and queued for processing", task_id)
 
     return {"status": "accepted", "taskId": task_id}
 
 
 @router.get("/{task_id}", response_model=TaskStatusResponse)
 async def get_task_status(task_id: str):
+    logger.debug("Status request for task %s", task_id)
     db = get_db()
     doc = await db.tts_tasks.find_one({"taskId": task_id}, {"_id": 0})
     if not doc:
+        logger.warning("Task not found: %s", task_id)
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Task not found.")
 
+    logger.debug("Task %s status: %s", task_id, doc["status"])
     response = TaskStatusResponse(taskId=doc["taskId"], status=doc["status"])
 
     if doc["status"] == TaskStatus.COMPLETED:
@@ -57,9 +66,11 @@ async def get_task_status(task_id: str):
 
 @router.get("/{task_id}/content", response_model=TaskContentResponse)
 async def get_task_content(task_id: str):
+    logger.debug("Content request for task %s", task_id)
     db = get_db()
     doc = await db.tts_tasks.find_one({"taskId": task_id}, {"_id": 0})
     if not doc:
+        logger.warning("Task not found: %s", task_id)
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Task not found.")
 
     response = TaskContentResponse(taskId=doc["taskId"], status=doc["status"])
@@ -78,5 +89,6 @@ async def get_task_content(task_id: str):
             for num in sorted(payload_by_number)
             if num in result_by_number
         ]
+        logger.debug("Returning content for task %s: %d segments", task_id, len(response.segments))
 
     return response

@@ -8,7 +8,8 @@ dependencies = [
     "motor>=3.6",
     "pydantic>=2.10",
     "pydantic-settings>=2.7",
-    "azure-cognitiveservices-speech>=1.43",
+    "elevenlabs>=1.0",
+    "httpx>=0.27",
 ]
 
 [project.optional-dependencies]

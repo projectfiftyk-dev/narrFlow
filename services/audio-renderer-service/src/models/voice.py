@@ -14,29 +14,3 @@ class VoiceUpdate(BaseModel):
     description: str | None = None
 
 
-HARDCODED_VOICES: list[Voice] = [
-    Voice(
-        id="en-US-JennyNeural",
-        slug="calm_female",
-        friendlyName="Calm Female Narrator",
-        description="Soft, neutral female narration voice",
-    ),
-    Voice(
-        id="en-US-GuyNeural",
-        slug="deep_male",
-        friendlyName="Deep Male Narrator",
-        description="Low, authoritative male voice",
-    ),
-    Voice(
-        id="en-US-AriaNeural",
-        slug="expressive_female",
-        friendlyName="Expressive Female",
-        description="Warm, expressive female voice suited for storytelling",
-    ),
-    Voice(
-        id="en-US-DavisNeural",
-        slug="casual_male",
-        friendlyName="Casual Male",
-        description="Friendly, casual male voice",
-    ),
-]

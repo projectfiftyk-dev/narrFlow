@@ -5,9 +5,9 @@ export interface Book {
   description?: string;
 }
 
-// Shape returned by GET /api/v1/books/{bookId}/sections
 export interface SectionContent {
   text: string;
+  author: string;
 }
 
 export interface BookSection {
@@ -25,32 +25,33 @@ export interface Voice {
 
 export type TransformationStatus =
   | 'DRAFT'
-  | 'PERSONA_ASSIGNMENT'
+  | 'VOICE_ASSIGNMENT'
   | 'GENERATING'
   | 'DONE'
   | 'FAILED';
-
-export interface PersonaMapping {
-  [sectionId: string]: string; // sectionId -> voiceId
-}
 
 export interface Transformation {
   id: string;
   userId: string;
   bookId: string;
-  personaMapping: PersonaMapping;
   status: TransformationStatus;
+  voiceMapping?: Record<string, string>; // author -> voiceId
+  ttsTaskId?: string;
+  createdAt?: string;
+  updatedAt?: string;
 }
 
 export interface ContentItem {
   sectionId: string;
+  sectionName: string;
+  author: string;
   text: string;
   audioUri: string;
-  personaId: string;
+  voiceId: string;
 }
 
 export interface Content {
-  contentId: string;
+  id: string;
   bookId: string;
   transformationId: string;
   items: ContentItem[];

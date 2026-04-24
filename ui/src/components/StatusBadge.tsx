@@ -2,7 +2,7 @@ import type { TransformationStatus } from '../types';
 
 const colors: Record<TransformationStatus, { bg: string; text: string }> = {
   DRAFT: { bg: '#edf2f7', text: '#4a5568' },
-  PERSONA_ASSIGNMENT: { bg: '#ebf8ff', text: '#2b6cb0' },
+  VOICE_ASSIGNMENT: { bg: '#ebf8ff', text: '#2b6cb0' },
   GENERATING: { bg: '#fefcbf', text: '#975a16' },
   DONE: { bg: '#f0fff4', text: '#276749' },
   FAILED: { bg: '#fff5f5', text: '#c53030' },

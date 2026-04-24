@@ -6,8 +6,8 @@ class Settings(BaseSettings):
 
     MONGODB_URL: str = "mongodb://localhost:27017"
     MONGODB_DB_NAME: str = "audio_renderer"
-    AZURE_SPEECH_KEY: str = ""
-    AZURE_SPEECH_REGION: str = "eastus"
+    ELEVENLABS_API_KEY: str = ""
+    ELEVENLABS_MODEL: str = "eleven_multilingual_v2"
     AUDIO_STORAGE_PATH: str = "tts-storage"
     AUDIO_BASE_URL: str = "/audio"
 
