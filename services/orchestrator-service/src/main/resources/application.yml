@@ -1,0 +1,17 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: orchestrator-service
+  data:
+    mongodb:
+      uri: mongodb://localhost:27000/orchestrator
+
+tts:
+  service:
+    base-url: http://localhost:8081
+
+logging:
+  level:
+    com.bookplayer: DEBUG

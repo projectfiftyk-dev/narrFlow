@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Read(//c/Users/aflorescu/MyCode/secret_DONT_Touch//**)",
+      "Read(//c/Users/aflorescu/MyCode/secret_DONT_Touch/**)",
+      "Bash(uv run *)"
+    ]
+  }
+}
