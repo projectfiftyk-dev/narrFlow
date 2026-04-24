@@ -5,7 +5,15 @@
       "Bash(npm install *)",
       "Bash(npx tsc *)",
       "Bash(npm run *)",
-      "mcp__Claude_in_Chrome__tabs_context_mcp"
+      "mcp__Claude_in_Chrome__tabs_context_mcp",
+      "Bash(./mvnw compile *)",
+      "Bash(./mvnw test *)",
+      "Bash(uv sync *)",
+      "Bash(uv pip *)",
+      "Bash(curl -s \"https://api.elevenlabs.io/v2/voices?language=ro\" -H \"xi-api-key: sk_702319cfdd8a4d10f7ac1941565fe8d5be6090b06f09d82b\")",
+      "Bash(python -c \"import sys,json; data=json.load\\(sys.stdin\\); [print\\(f\\\\\"{v['voice_id']} | {v['name']} | gender={v.get\\('labels',{}\\).get\\('gender','?'\\)} | accent={v.get\\('labels',{}\\).get\\('accent','?'\\)} | desc={v.get\\('labels',{}\\).get\\('description','?'\\)}\\\\\"\\) for v in data.get\\('voices',[]\\)]\")",
+      "Bash(python3 -c ' *)",
+      "Bash(.venv/Scripts/python.exe -c ' *)"
     ]
   }
 }
