@@ -3,8 +3,10 @@ package com.bookplayer.orchestrator.services.content;
 import com.bookplayer.orchestrator.domain.content.Content;
 import com.bookplayer.orchestrator.domain.transformation.Transformation;
 import com.bookplayer.orchestrator.domain.transformation.TransformationStatus;
+import com.bookplayer.orchestrator.domain.transformation.TransformationVisibility;
 import com.bookplayer.orchestrator.repository.ContentRepository;
 import com.bookplayer.orchestrator.repository.TransformationRepository;
+import com.bookplayer.orchestrator.security.AuthenticatedUser;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
@@ -20,7 +22,7 @@ public class ContentServiceImpl implements ContentService {
     private final TransformationRepository transformationRepository;
 
     @Override
-    public Content getContent(String transformationId) {
+    public Content getContent(String transformationId, AuthenticatedUser user) {
         log.debug("Fetching content for transformation: {}", transformationId);
         Transformation transformation = transformationRepository.findById(transformationId)
                 .orElseThrow(() -> {
@@ -28,6 +30,13 @@ public class ContentServiceImpl implements ContentService {
                     return new ResponseStatusException(HttpStatus.NOT_FOUND,
                             "Transformation not found: " + transformationId);
                 });
+
+        boolean isPublic = transformation.getVisibility() == TransformationVisibility.PUBLIC;
+        boolean isOwnerOrAdmin = user != null && (user.isAdmin() || transformation.getUserId().equals(user.userId()));
+        if (!isPublic && !isOwnerOrAdmin) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND,
+                    "Transformation not found: " + transformationId);
+        }
 
         if (transformation.getStatus() != TransformationStatus.DONE) {
             log.warn("Content not ready for transformation {}: status={}", transformationId, transformation.getStatus());

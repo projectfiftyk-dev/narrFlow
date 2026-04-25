@@ -4,11 +4,15 @@ import com.bookplayer.orchestrator.domain.book.BookSection;
 import com.bookplayer.orchestrator.domain.book.ContentParagraph;
 import com.bookplayer.orchestrator.domain.transformation.Transformation;
 import com.bookplayer.orchestrator.domain.transformation.TransformationStatus;
+import com.bookplayer.orchestrator.domain.transformation.TransformationVisibility;
 import com.bookplayer.orchestrator.repository.TransformationRepository;
+import com.bookplayer.orchestrator.security.AuthenticatedUser;
 import com.bookplayer.orchestrator.services.book.BookService;
 import com.bookplayer.orchestrator.services.tts.TtsClient;
 import com.bookplayer.orchestrator.services.tts.TtsPollingService;
+import com.bookplayer.orchestrator.transfer.common.PagedResponse;
 import com.bookplayer.orchestrator.transfer.transformation.request.CreateTransformationRequest;
+import com.bookplayer.orchestrator.transfer.transformation.request.UpdateVisibilityRequest;
 import com.bookplayer.orchestrator.transfer.transformation.request.UpdateVoiceMappingRequest;
 import com.bookplayer.orchestrator.transfer.transformation.response.GenerateResponse;
 import com.bookplayer.orchestrator.transfer.tts.TtsSegmentInput;
@@ -16,10 +20,13 @@ import com.bookplayer.orchestrator.transfer.tts.TtsTaskRequest;
 import com.bookplayer.orchestrator.transfer.tts.VoiceDto;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
 
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
@@ -32,31 +39,35 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class TransformationServiceImpl implements TransformationService {
 
-    private static final int MAX_TRANSFORMATIONS_PER_USER = 5;
-
     private final TransformationRepository transformationRepository;
     private final BookService bookService;
     private final TtsClient ttsClient;
     private final TtsPollingService ttsPollingService;
 
     @Override
-    public Transformation createTransformation(String userId, CreateTransformationRequest request) {
-        log.info("Creating transformation for user={}, bookId={}", userId, request.bookId());
+    public Transformation createTransformation(AuthenticatedUser user, CreateTransformationRequest request) {
+        log.info("Creating transformation for user={}, bookId={}", user.userId(), request.bookId());
         bookService.getBook(request.bookId());
 
-        long count = transformationRepository.countByUserId(userId);
-        if (count >= MAX_TRANSFORMATIONS_PER_USER) {
-            log.warn("User {} reached transformation limit ({})", userId, MAX_TRANSFORMATIONS_PER_USER);
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
-                    "Maximum of " + MAX_TRANSFORMATIONS_PER_USER + " transformations per user reached");
+        if (!user.isAdmin()) {
+            LocalDateTime startOfDay = LocalDate.now().atStartOfDay();
+            long countToday = transformationRepository.countByUserIdAndCreatedAtAfter(user.userId(), startOfDay);
+            if (countToday >= 1) {
+                log.warn("User {} reached daily transformation limit", user.userId());
+                throw new ResponseStatusException(HttpStatus.TOO_MANY_REQUESTS,
+                        "Daily transformation limit reached. Only 1 transformation allowed per day.");
+            }
         }
 
+        LocalDateTime now = LocalDateTime.now();
         Transformation transformation = Transformation.builder()
-                .userId(userId)
+                .userId(user.userId())
                 .bookId(request.bookId())
+                .name(request.name())
                 .status(TransformationStatus.DRAFT)
-                .createdAt(LocalDateTime.now())
-                .updatedAt(LocalDateTime.now())
+                .visibility(TransformationVisibility.PRIVATE)
+                .createdAt(now)
+                .updatedAt(now)
                 .build();
         Transformation saved = transformationRepository.save(transformation);
         log.info("Transformation created: id={}", saved.getId());
@@ -64,29 +75,58 @@ public class TransformationServiceImpl implements TransformationService {
     }
 
     @Override
-    public Transformation getTransformation(String transformationId) {
-        log.debug("Fetching transformation: {}", transformationId);
+    public Transformation getTransformation(String transformationId, AuthenticatedUser user) {
+        log.debug("Fetching transformation: {} user={}", transformationId, user != null ? user.userId() : "anonymous");
+
+        if (user == null) {
+            // Anonymous: only public transformations are visible, return 404 otherwise
+            return transformationRepository.findById(transformationId)
+                    .filter(t -> t.getVisibility() == TransformationVisibility.PUBLIC)
+                    .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND,
+                            "Transformation not found: " + transformationId));
+        }
+
+        if (user.isAdmin()) {
+            return findByIdOrThrow(transformationId);
+        }
+
+        // Authenticated user: own transformations or public, 404 otherwise (don't reveal existence)
         return transformationRepository.findById(transformationId)
-                .orElseThrow(() -> {
-                    log.warn("Transformation not found: {}", transformationId);
-                    return new ResponseStatusException(HttpStatus.NOT_FOUND,
-                            "Transformation not found: " + transformationId);
-                });
+                .filter(t -> t.getUserId().equals(user.userId())
+                        || t.getVisibility() == TransformationVisibility.PUBLIC)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND,
+                        "Transformation not found: " + transformationId));
     }
 
     @Override
-    public List<Transformation> listTransformations() {
-        List<Transformation> list = transformationRepository.findAll();
-        log.debug("Listed {} transformations", list.size());
-        return list;
+    public PagedResponse<Transformation> listTransformations(AuthenticatedUser user, String search, Pageable pageable) {
+        boolean hasSearch = search != null && !search.isBlank();
+        Page<Transformation> page;
+        if (user == null) {
+            page = hasSearch
+                    ? transformationRepository.findByVisibilityAndNameContainingIgnoreCase(TransformationVisibility.PUBLIC, search.trim(), pageable)
+                    : transformationRepository.findByVisibility(TransformationVisibility.PUBLIC, pageable);
+            log.debug("Anonymous listed {} public transformations (search='{}')", page.getTotalElements(), search);
+        } else if (user.isAdmin()) {
+            page = hasSearch
+                    ? transformationRepository.findByNameContainingIgnoreCase(search.trim(), pageable)
+                    : transformationRepository.findAll(pageable);
+            log.debug("Admin listed {} transformations (search='{}')", page.getTotalElements(), search);
+        } else {
+            page = hasSearch
+                    ? transformationRepository.findVisibleToUserAndNameContaining(user.userId(), TransformationVisibility.PUBLIC, search.trim(), pageable)
+                    : transformationRepository.findVisibleToUser(user.userId(), TransformationVisibility.PUBLIC, pageable);
+            log.debug("User {} listed {} transformations (search='{}')", user.userId(), page.getTotalElements(), search);
+        }
+        return new PagedResponse<>(page.getContent(), page.getNumber(), page.getSize(), page.getTotalElements());
     }
 
     @Override
-    public Transformation updateVoiceMapping(String transformationId, String userId,
+    public Transformation updateVoiceMapping(String transformationId, AuthenticatedUser user,
                                              UpdateVoiceMappingRequest request) {
-        log.info("Updating voice mapping for transformation={}, user={}", transformationId, userId);
-        Transformation transformation = getTransformation(transformationId);
-        assertOwner(transformation, userId);
+        log.info("Updating voice mapping for transformation={}, user={}", transformationId, user.userId());
+        Transformation transformation = findByIdOrThrow(transformationId);
+        assertOwnerOrAdmin(transformation, user);
 
         if (transformation.getStatus() == TransformationStatus.GENERATING
                 || transformation.getStatus() == TransformationStatus.DONE) {
@@ -104,10 +144,25 @@ public class TransformationServiceImpl implements TransformationService {
     }
 
     @Override
-    public GenerateResponse triggerGeneration(String transformationId, String userId) {
-        log.info("Triggering generation for transformation={}, user={}", transformationId, userId);
-        Transformation transformation = getTransformation(transformationId);
-        assertOwner(transformation, userId);
+    public Transformation updateVisibility(String transformationId, AuthenticatedUser user,
+                                           UpdateVisibilityRequest request) {
+        log.info("Updating visibility for transformation={}, user={}, visibility={}",
+                transformationId, user.userId(), request.visibility());
+        Transformation transformation = findByIdOrThrow(transformationId);
+        assertOwnerOrAdmin(transformation, user);
+
+        transformation.setVisibility(request.visibility());
+        transformation.setUpdatedAt(LocalDateTime.now());
+        Transformation saved = transformationRepository.save(transformation);
+        log.info("Visibility updated for transformation={}: {}", transformationId, request.visibility());
+        return saved;
+    }
+
+    @Override
+    public GenerateResponse triggerGeneration(String transformationId, AuthenticatedUser user) {
+        log.info("Triggering generation for transformation={}, user={}", transformationId, user.userId());
+        Transformation transformation = findByIdOrThrow(transformationId);
+        assertOwnerOrAdmin(transformation, user);
 
         if (transformation.getStatus() != TransformationStatus.VOICE_ASSIGNMENT) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
@@ -117,7 +172,6 @@ public class TransformationServiceImpl implements TransformationService {
         List<BookSection> sections = bookService.getSections(transformation.getBookId());
         Map<String, String> voiceMapping = transformation.getVoiceMapping();
 
-        // Collect all unique authors across all paragraphs
         Set<String> bookAuthors = sections.stream()
                 .flatMap(s -> s.getContent().stream())
                 .map(ContentParagraph::getAuthor)
@@ -185,9 +239,18 @@ public class TransformationServiceImpl implements TransformationService {
         return new GenerateResponse(transformationId, TransformationStatus.GENERATING.name(), ttsTaskId);
     }
 
-    private void assertOwner(Transformation transformation, String userId) {
-        if (!transformation.getUserId().equals(userId)) {
-            log.warn("Unauthorized access to transformation={} by user={}", transformation.getId(), userId);
+    private Transformation findByIdOrThrow(String transformationId) {
+        return transformationRepository.findById(transformationId)
+                .orElseThrow(() -> {
+                    log.warn("Transformation not found: {}", transformationId);
+                    return new ResponseStatusException(HttpStatus.NOT_FOUND,
+                            "Transformation not found: " + transformationId);
+                });
+    }
+
+    private void assertOwnerOrAdmin(Transformation transformation, AuthenticatedUser user) {
+        if (!user.isAdmin() && !transformation.getUserId().equals(user.userId())) {
+            log.warn("Unauthorized access to transformation={} by user={}", transformation.getId(), user.userId());
             throw new ResponseStatusException(HttpStatus.FORBIDDEN,
                     "Not authorized to modify this transformation");
         }

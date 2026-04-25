@@ -1,0 +1,450 @@
+{
+  "info": {
+    "name": "orchestrator-service",
+    "description": "narrFlow orchestrator service — book management, transformation workflow, TTS orchestration and content delivery.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:8080",
+      "type": "string"
+    },
+    {
+      "key": "token",
+      "value": "",
+      "type": "string",
+      "description": "Set automatically by the login requests."
+    },
+    {
+      "key": "bookId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "sectionId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "transformationId",
+      "value": "",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "Auth",
+      "item": [
+        {
+          "name": "Login (Google)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "var json = pm.response.json();",
+                  "if (json.token) {",
+                  "  pm.collectionVariables.set('token', json.token);",
+                  "  console.log('Token saved. Role:', json.role);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"googleToken\": \"<paste-google-id-token-here>\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/auth/login",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "auth", "login"]
+            },
+            "description": "Exchange a Google ID token for a service JWT. The test script stores the returned token in the `token` collection variable."
+          }
+        },
+        {
+          "name": "Dev Login — Admin",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "var json = pm.response.json();",
+                  "if (json.token) {",
+                  "  pm.collectionVariables.set('token', json.token);",
+                  "  console.log('Token saved. Role:', json.role);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"admin@dev.local\",\n  \"role\": \"ADMIN\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/auth/dev-login",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "auth", "dev-login"]
+            },
+            "description": "Dev profile only. Issues a JWT with ADMIN role without Google verification."
+          }
+        },
+        {
+          "name": "Dev Login — User",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "var json = pm.response.json();",
+                  "if (json.token) {",
+                  "  pm.collectionVariables.set('token', json.token);",
+                  "  console.log('Token saved. Role:', json.role);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"user@dev.local\",\n  \"role\": \"USER\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/auth/dev-login",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "auth", "dev-login"]
+            },
+            "description": "Dev profile only. Issues a JWT with USER role without Google verification."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Books",
+      "item": [
+        {
+          "name": "Create Book",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "var json = pm.response.json();",
+                  "if (json.id) {",
+                  "  pm.collectionVariables.set('bookId', json.id);",
+                  "  console.log('bookId saved:', json.id);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"The Great Adventure\",\n  \"version\": \"1.0\",\n  \"sections\": [\n    {\n      \"sectionId\": \"ch1\",\n      \"sectionName\": \"Chapter 1\",\n      \"content\": [\n        { \"text\": \"It was a dark and stormy night.\", \"author\": \"Narrator\" },\n        { \"text\": \"Who goes there?\", \"author\": \"Hero\" },\n        { \"text\": \"A friend, I hope.\", \"author\": \"Villain\" }\n      ]\n    },\n    {\n      \"sectionId\": \"ch2\",\n      \"sectionName\": \"Chapter 2\",\n      \"content\": [\n        { \"text\": \"Dawn broke over the horizon.\", \"author\": \"Narrator\" },\n        { \"text\": \"We must press on.\", \"author\": \"Hero\" }\n      ]\n    }\n  ]\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/books",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "books"]
+            },
+            "description": "ADMIN only. Response includes `createdAt` and `updatedAt`. Saves the returned `id` to `bookId`."
+          }
+        },
+        {
+          "name": "List Books",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/books?page=0&size=20&sortBy=createdAt&sortDir=desc",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "books"],
+              "query": [
+                { "key": "page", "value": "0" },
+                { "key": "size", "value": "20" },
+                { "key": "search", "value": "", "disabled": true, "description": "Filter by title (case-insensitive contains)" },
+                { "key": "sortBy", "value": "createdAt", "description": "createdAt | updatedAt | title" },
+                { "key": "sortDir", "value": "desc", "description": "asc | desc" }
+              ]
+            },
+            "description": "Returns `{ items, page, size, totalElements }`. Sortable by `createdAt`, `updatedAt`, `title`. Searchable by `search`."
+          }
+        },
+        {
+          "name": "Get Book",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/books/{{bookId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "books", "{{bookId}}"]
+            }
+          }
+        },
+        {
+          "name": "List Sections",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "var json = pm.response.json();",
+                  "if (json.items && json.items.length > 0) {",
+                  "  pm.collectionVariables.set('sectionId', json.items[0].sectionId);",
+                  "  console.log('sectionId saved:', json.items[0].sectionId);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/books/{{bookId}}/sections?page=0&size=20",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "books", "{{bookId}}", "sections"],
+              "query": [
+                { "key": "page", "value": "0" },
+                { "key": "size", "value": "20" },
+                { "key": "search", "value": "", "disabled": true, "description": "Filter by section name" }
+              ]
+            },
+            "description": "Paginated. Searchable by section name. Saves the first `sectionId` to the variable."
+          }
+        },
+        {
+          "name": "Get Section",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/books/{{bookId}}/sections/{{sectionId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "books", "{{bookId}}", "sections", "{{sectionId}}"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Transformations",
+      "item": [
+        {
+          "name": "Create Transformation",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "var json = pm.response.json();",
+                  "if (json.id) {",
+                  "  pm.collectionVariables.set('transformationId', json.id);",
+                  "  console.log('transformationId saved:', json.id);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"bookId\": \"{{bookId}}\",\n  \"name\": \"My Production Read\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/transformations",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "transformations"]
+            },
+            "description": "Creates a transformation in DRAFT status. USER role is limited to 1 per day. Fields: `bookId` (required), `name` (required). Response includes `createdAt`, `updatedAt`, `visibility` (defaults to PRIVATE)."
+          }
+        },
+        {
+          "name": "List Transformations (authenticated)",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/transformations?page=0&size=20&sortBy=updatedAt&sortDir=desc",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "transformations"],
+              "query": [
+                { "key": "page", "value": "0" },
+                { "key": "size", "value": "20" },
+                { "key": "search", "value": "", "disabled": true, "description": "Filter by transformation name" },
+                { "key": "sortBy", "value": "updatedAt", "description": "createdAt | updatedAt | name" },
+                { "key": "sortDir", "value": "desc", "description": "asc | desc" }
+              ]
+            },
+            "description": "ADMIN: all. USER: own + public. Sortable by `createdAt`, `updatedAt`, `name`. Searchable by name."
+          }
+        },
+        {
+          "name": "List Transformations (anonymous)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/transformations?page=0&size=20&sortBy=updatedAt&sortDir=desc",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "transformations"],
+              "query": [
+                { "key": "page", "value": "0" },
+                { "key": "size", "value": "20" },
+                { "key": "search", "value": "", "disabled": true, "description": "Filter by transformation name" },
+                { "key": "sortBy", "value": "updatedAt" },
+                { "key": "sortDir", "value": "desc" }
+              ]
+            },
+            "description": "No token required. Returns only PUBLIC transformations."
+          }
+        },
+        {
+          "name": "Get Transformation (authenticated)",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/transformations/{{transformationId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "transformations", "{{transformationId}}"]
+            },
+            "description": "ADMIN: any. USER: own or PUBLIC, else 404."
+          }
+        },
+        {
+          "name": "Get Transformation (anonymous)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/transformations/{{transformationId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "transformations", "{{transformationId}}"]
+            },
+            "description": "No token required. Returns 200 if PUBLIC, 404 otherwise."
+          }
+        },
+        {
+          "name": "Assign Voices",
+          "request": {
+            "method": "PUT",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"voiceMapping\": {\n    \"Narrator\": \"<voiceId>\",\n    \"Hero\": \"<voiceId>\",\n    \"Villain\": \"<voiceId>\"\n  }\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/transformations/{{transformationId}}/voices",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "transformations", "{{transformationId}}", "voices"]
+            },
+            "description": "Owner or ADMIN. Maps each author name to a voice ID (from GET /voices). Moves status to VOICE_ASSIGNMENT. Updates `updatedAt`."
+          }
+        },
+        {
+          "name": "Update Visibility",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"visibility\": \"PUBLIC\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/transformations/{{transformationId}}/visibility",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "transformations", "{{transformationId}}", "visibility"]
+            },
+            "description": "Owner or ADMIN. Accepted values: `PUBLIC` | `PRIVATE`. Updates `updatedAt`."
+          }
+        },
+        {
+          "name": "Trigger Generation",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/transformations/{{transformationId}}/generate",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "transformations", "{{transformationId}}", "generate"]
+            },
+            "description": "Owner or ADMIN. Requires status VOICE_ASSIGNMENT. Sends all segments to TTS and transitions to GENERATING. Poll GET /transformations/{id} until status is DONE or FAILED."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Content",
+      "item": [
+        {
+          "name": "Get Content",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/content/{{transformationId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "content", "{{transformationId}}"]
+            },
+            "description": "Returns generated audio content with URIs per segment. Only available when transformation status is DONE. Returns 409 if still processing. Access: owner, ADMIN, or any user if transformation is PUBLIC."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Voices",
+      "item": [
+        {
+          "name": "List Voices",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/voices",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "voices"]
+            },
+            "description": "Returns available TTS voice options from the audio-renderer service. Use the returned IDs in the Assign Voices request body."
+          }
+        }
+      ]
+    }
+  ]
+}

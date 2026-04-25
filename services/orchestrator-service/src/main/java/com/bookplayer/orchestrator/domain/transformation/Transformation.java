@@ -21,7 +21,10 @@ public class Transformation {
     private String id;
     private String userId;
     private String bookId;
+    private String name;
     private TransformationStatus status;
+    @Builder.Default
+    private TransformationVisibility visibility = TransformationVisibility.PRIVATE;
     private Map<String, String> voiceMapping; // author -> voiceId
     private String ttsTaskId;
     private List<String> segmentSectionIds; // index == segmentNumber, value == sectionId

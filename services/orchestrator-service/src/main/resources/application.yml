@@ -12,6 +12,15 @@ tts:
   service:
     base-url: https://nitrogen-elections-upgrades-generator.trycloudflare.com
 
+auth:
+  google:
+    client-id: YOUR_GOOGLE_CLIENT_ID.apps.googleusercontent.com
+  jwt:
+    secret: CHANGE_ME_TO_A_BASE64_ENCODED_256BIT_SECRET_KEY_AT_LEAST_32_BYTES
+    expiration-ms: 86400000
+  admin-emails:
+    - admin@example.com
+
 logging:
   level:
     com.bookplayer: DEBUG

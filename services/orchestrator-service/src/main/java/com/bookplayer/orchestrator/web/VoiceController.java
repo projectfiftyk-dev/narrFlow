@@ -1,5 +1,6 @@
 package com.bookplayer.orchestrator.web;
 
+import com.bookplayer.orchestrator.security.SecurityUtils;
 import com.bookplayer.orchestrator.services.tts.TtsClient;
 import com.bookplayer.orchestrator.transfer.tts.VoiceDto;
 import lombok.RequiredArgsConstructor;
@@ -18,6 +19,7 @@ public class VoiceController {
 
     @GetMapping
     public List<VoiceDto> getVoices() {
+        SecurityUtils.requireAuthenticated();
         log.debug("GET /voices");
         return ttsClient.getVoices();
     }

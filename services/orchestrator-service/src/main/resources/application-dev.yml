@@ -1,0 +1,12 @@
+auth:
+  google:
+    client-id: dev-bypass
+  jwt:
+    secret: dev-secret-key-change-this-for-production-use-only-32b
+    expiration-ms: 86400000
+  admin-emails:
+    - admin@dev.local
+
+logging:
+  level:
+    com.bookplayer: DEBUG

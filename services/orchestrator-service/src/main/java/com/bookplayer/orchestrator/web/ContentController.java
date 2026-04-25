@@ -1,6 +1,7 @@
 package com.bookplayer.orchestrator.web;
 
 import com.bookplayer.orchestrator.domain.content.Content;
+import com.bookplayer.orchestrator.security.SecurityUtils;
 import com.bookplayer.orchestrator.services.content.ContentService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -16,7 +17,8 @@ public class ContentController {
 
     @GetMapping("/{transformationId}")
     public Content getContent(@PathVariable String transformationId) {
-        log.debug("GET /content/{}", transformationId);
-        return contentService.getContent(transformationId);
+        var user = SecurityUtils.currentUser();
+        log.debug("GET /content/{} user={}", transformationId, user != null ? user.userId() : "anonymous");
+        return contentService.getContent(transformationId, user);
     }
 }
