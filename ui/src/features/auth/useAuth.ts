@@ -25,6 +25,16 @@ export function useAuth() {
     return data;
   };
 
+  const devLogin = async (role: 'ADMIN' | 'USER') => {
+    const email = role === 'ADMIN' ? 'admin@dev.local' : 'user@dev.local';
+    const { data } = await api.post('/auth/dev-login', { email, role });
+    localStorage.setItem('jwt', data.token);
+    localStorage.setItem('userId', data.userId);
+    localStorage.setItem('role', data.role);
+    setAuth({ token: data.token, userId: data.userId, role: data.role });
+    return data;
+  };
+
   const logout = () => {
     localStorage.removeItem('jwt');
     localStorage.removeItem('userId');
@@ -32,5 +42,5 @@ export function useAuth() {
     setAuth(null);
   };
 
-  return { auth, login, logout, isLoggedIn: !!auth };
+  return { auth, login, devLogin, logout, isLoggedIn: !!auth };
 }

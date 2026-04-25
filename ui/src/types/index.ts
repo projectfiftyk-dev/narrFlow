@@ -1,8 +1,18 @@
+export interface PagedResponse<T> {
+  items: T[];
+  page: number;
+  size: number;
+  totalElements: number;
+}
+
 export interface Book {
   id: string;
   title: string;
+  version?: string;
   author?: string;
   description?: string;
+  createdAt?: string;
+  updatedAt?: string;
 }
 
 export interface SectionContent {
@@ -30,11 +40,15 @@ export type TransformationStatus =
   | 'DONE'
   | 'FAILED';
 
+export type TransformationVisibility = 'PUBLIC' | 'PRIVATE';
+
 export interface Transformation {
   id: string;
   userId: string;
   bookId: string;
+  name?: string;
   status: TransformationStatus;
+  visibility?: TransformationVisibility;
   voiceMapping?: Record<string, string>; // author -> voiceId
   ttsTaskId?: string;
   createdAt?: string;

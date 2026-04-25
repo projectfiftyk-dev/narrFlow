@@ -10,7 +10,7 @@ spring:
 
 tts:
   service:
-    base-url: https://nitrogen-elections-upgrades-generator.trycloudflare.com
+    base-url: localhost:8081
 
 auth:
   google:

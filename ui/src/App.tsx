@@ -1,5 +1,6 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { LandingPage } from './pages/LandingPage';
 import { LoginPage } from './pages/LoginPage';
 import { BooksLibraryPage } from './pages/BooksLibraryPage';
 import { BookViewerPage } from './pages/BookViewerPage';
@@ -15,7 +16,7 @@ const queryClient = new QueryClient({
 function AppRoutes() {
   return (
     <Routes>
-      <Route path="/" element={<Navigate to="/books" replace />} />
+      <Route path="/" element={<LandingPage />} />
       <Route path="/login" element={<LoginPage />} />
       <Route
         path="/books"
@@ -57,7 +58,7 @@ function AppRoutes() {
           </AppLayout>
         }
       />
-      <Route path="*" element={<Navigate to="/books" replace />} />
+      <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );
 }

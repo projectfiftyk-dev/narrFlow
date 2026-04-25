@@ -12,36 +12,53 @@ import {
 import { PersonaSelector } from '../components/PersonaSelector';
 import { StatusBadge } from '../components/StatusBadge';
 import { useAppStore } from '../store/useAppStore';
+import { useRole } from '../features/auth/useRole';
 
 export function NewTransformationPage() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const role = useRole();
   const setActiveTransformation = useAppStore((s) => s.setActiveTransformation);
   const [searchParams] = useSearchParams();
   const resumeId = searchParams.get('resumeId');
+
+  // Redirect guests immediately
+  useEffect(() => {
+    if (role === 'GUEST') navigate('/login', { replace: true });
+  }, [role]);
 
   const [selectedBookId, setSelectedBookId] = useState<string>('');
   const [transformationId, setTransformationId] = useState<string | null>(resumeId);
   const [voiceMapping, setVoiceMapping] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
 
-  // Mark active on mount when resuming
   useEffect(() => {
     if (resumeId) setActiveTransformation(resumeId);
   }, [resumeId]);
 
-  const { data: books = [] } = useQuery({ queryKey: ['books'], queryFn: fetchBooks });
+  const { data: booksData } = useQuery({
+    queryKey: ['books', { size: 100 }],
+    queryFn: () => fetchBooks({ size: 100 }),
+    enabled: role !== 'GUEST',
+  });
+  const books = booksData?.items ?? [];
+
   const {
     data: voices = [],
     isLoading: voicesLoading,
     isError: voicesError,
-  } = useQuery({ queryKey: ['voices'], queryFn: fetchVoices });
+  } = useQuery({
+    queryKey: ['voices'],
+    queryFn: fetchVoices,
+    enabled: role !== 'GUEST',
+  });
 
-  const { data: sections = [] } = useQuery({
+  const { data: sectionsData } = useQuery({
     queryKey: ['sections', selectedBookId],
-    queryFn: () => fetchBookSections(selectedBookId),
+    queryFn: () => fetchBookSections(selectedBookId, { size: 200 }),
     enabled: !!selectedBookId,
   });
+  const sections = sectionsData?.items ?? [];
 
   const { data: transformation } = useQuery({
     queryKey: ['transformation', transformationId],
@@ -53,7 +70,7 @@ export function NewTransformationPage() {
     },
   });
 
-  // Pre-fill state when resuming an existing transformation
+  // Pre-fill when resuming
   useEffect(() => {
     if (transformation && resumeId && !selectedBookId) {
       setSelectedBookId(transformation.bookId);
@@ -61,7 +78,7 @@ export function NewTransformationPage() {
     }
   }, [transformation, resumeId]);
 
-  // Navigate to player once generation completes
+  // Navigate to player once done
   useEffect(() => {
     if (transformation?.status === 'DONE') {
       setActiveTransformation(transformation.id);
@@ -75,8 +92,11 @@ export function NewTransformationPage() {
 
   const allAssigned = uniqueAuthors.length > 0 && uniqueAuthors.every((a) => !!voiceMapping[a]);
 
+  const selectedBook = books.find((b) => b.id === selectedBookId);
+
   const createMutation = useMutation({
-    mutationFn: () => createTransformation(selectedBookId),
+    mutationFn: () =>
+      createTransformation(selectedBookId, selectedBook?.title ?? selectedBookId),
     onSuccess: (t) => {
       setTransformationId(t.id);
       setActiveTransformation(t.id);
@@ -106,6 +126,8 @@ export function NewTransformationPage() {
     },
   });
 
+  if (role === 'GUEST') return null;
+
   const status = transformation?.status;
   const isGenerating = status === 'GENERATING';
   const isFailed = status === 'FAILED';
@@ -123,18 +145,20 @@ export function NewTransformationPage() {
         </p>
       </div>
 
-      {/* Step 1: Book picker — hidden when resuming */}
+      {/* Step 1: Book picker */}
       {!transformationId && !resumeId && (
         <div
           style={{
             background: '#fff',
             border: '1px solid #e2e8f0',
             borderRadius: 10,
-            padding: '24px',
+            padding: 24,
             marginBottom: 24,
           }}
         >
-          <h3 style={{ margin: '0 0 16px', color: '#2d3748', fontSize: 15 }}>Select a Book</h3>
+          <h3 style={{ margin: '0 0 16px', color: '#2d3748', fontSize: 15 }}>
+            1 · Select a Book
+          </h3>
           <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
             <select
               value={selectedBookId}
@@ -177,13 +201,13 @@ export function NewTransformationPage() {
           </div>
           {createMutation.isError && (
             <p style={{ margin: '10px 0 0', color: '#c53030', fontSize: 13 }}>
-              Failed to create transformation. You may have reached the 5-transformation limit.
+              Failed to create transformation.
             </p>
           )}
         </div>
       )}
 
-      {/* Transformation header once created */}
+      {/* Transformation header */}
       {transformationId && transformation && (
         <div
           style={{
@@ -195,8 +219,14 @@ export function NewTransformationPage() {
             background: '#fff',
             border: '1px solid #e2e8f0',
             borderRadius: 8,
+            flexWrap: 'wrap',
           }}
         >
+          {transformation.name && (
+            <span style={{ color: '#2d3748', fontSize: 14, fontWeight: 600 }}>
+              {transformation.name}
+            </span>
+          )}
           <span style={{ color: '#4a5568', fontSize: 13 }}>
             {books.find((b) => b.id === selectedBookId)?.title ?? selectedBookId}
           </span>
@@ -212,7 +242,7 @@ export function NewTransformationPage() {
       {transformationId && !isGenerating && !isFailed && (
         <div>
           <h3 style={{ margin: '0 0 16px', color: '#2d3748', fontSize: 15 }}>
-            Assign Voices to Authors
+            2 · Assign Voices to Authors
           </h3>
 
           {voicesError && (
@@ -226,39 +256,40 @@ export function NewTransformationPage() {
                 marginBottom: 12,
               }}
             >
-              Failed to load voices from /api/v1/voices. Make sure the service is running.
+              Failed to load voices from /api/v1/voices.
             </div>
           )}
 
-          {(uniqueAuthors.length === 0 && sections.length === 0) || voicesLoading ? (
+          {voicesLoading || (uniqueAuthors.length === 0 && sections.length === 0) ? (
             <p style={{ color: '#a0aec0', fontSize: 14 }}>
               {voicesLoading ? 'Loading voices…' : 'Loading sections…'}
             </p>
           ) : null}
 
-          {!voicesLoading && uniqueAuthors.map((author) => (
-            <div
-              key={author}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                padding: '12px 16px',
-                border: '1px solid #e2e8f0',
-                borderRadius: 8,
-                marginBottom: 8,
-                background: '#fff',
-              }}
-            >
-              <div style={{ fontWeight: 500, color: '#2d3748', fontSize: 14 }}>{author}</div>
-              <PersonaSelector
-                itemKey={author}
-                voices={voices}
-                value={voiceMapping[author] ?? ''}
-                onChange={(key, vid) => setVoiceMapping((m) => ({ ...m, [key]: vid }))}
-              />
-            </div>
-          ))}
+          {!voicesLoading &&
+            uniqueAuthors.map((author) => (
+              <div
+                key={author}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  padding: '12px 16px',
+                  border: '1px solid #e2e8f0',
+                  borderRadius: 8,
+                  marginBottom: 8,
+                  background: '#fff',
+                }}
+              >
+                <div style={{ fontWeight: 500, color: '#2d3748', fontSize: 14 }}>{author}</div>
+                <PersonaSelector
+                  itemKey={author}
+                  voices={voices}
+                  value={voiceMapping[author] ?? ''}
+                  onChange={(key, vid) => setVoiceMapping((m) => ({ ...m, [key]: vid }))}
+                />
+              </div>
+            ))}
 
           {uniqueAuthors.length > 0 && !voicesLoading && (
             <div style={{ display: 'flex', gap: 12, marginTop: 20 }}>
@@ -307,7 +338,6 @@ export function NewTransformationPage() {
         </div>
       )}
 
-      {/* Generating state */}
       {isGenerating && (
         <div style={{ textAlign: 'center', padding: 60, color: '#4a5568' }}>
           <div style={{ fontSize: 48, marginBottom: 16 }}>⏳</div>
@@ -316,7 +346,6 @@ export function NewTransformationPage() {
         </div>
       )}
 
-      {/* Failed state */}
       {isFailed && (
         <div
           style={{

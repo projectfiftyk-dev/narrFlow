@@ -41,7 +41,6 @@ public class BookController {
             @RequestParam(defaultValue = "desc") String sortDir,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size) {
-        SecurityUtils.requireAuthenticated();
         String field = BOOK_SORT_FIELDS.contains(sortBy) ? sortBy : "createdAt";
         Sort sort = Sort.by(Sort.Direction.fromOptionalString(sortDir).orElse(Sort.Direction.DESC), field);
         log.debug("GET /books search='{}' sortBy={} sortDir={} page={} size={}", search, field, sortDir, page, size);

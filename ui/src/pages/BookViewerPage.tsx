@@ -1,33 +1,40 @@
 import { useState, useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { useParams } from 'react-router-dom';
+import { useParams, useNavigate } from 'react-router-dom';
 import { fetchBooks, fetchBookSections } from '../api/books';
+import { useRole } from '../features/auth/useRole';
 
 export function BookViewerPage() {
   const { bookId } = useParams<{ bookId: string }>();
+  const navigate = useNavigate();
+  const role = useRole();
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
 
-  // Get book title from the already-cached library list
-  const { data: books } = useQuery({ queryKey: ['books'], queryFn: fetchBooks });
-  const book = books?.find((b) => b.id === bookId);
+  const { data: booksData } = useQuery({
+    queryKey: ['books', { size: 100 }],
+    queryFn: () => fetchBooks({ size: 100 }),
+    retry: false,
+  });
+  const book = booksData?.items?.find((b) => b.id === bookId);
 
   const {
-    data: sections,
+    data: sectionsData,
     isLoading,
     isError,
     error,
   } = useQuery({
     queryKey: ['sections', bookId],
-    queryFn: () => fetchBookSections(bookId!),
+    queryFn: () => fetchBookSections(bookId!, { size: 200 }),
     enabled: !!bookId,
   });
 
-  // Auto-expand all sections once data arrives
+  const sections = sectionsData?.items ?? [];
+
   useEffect(() => {
-    if (sections?.length) {
+    if (sections.length) {
       setExpanded(Object.fromEntries(sections.map((s) => [s.sectionId, true])));
     }
-  }, [sections]);
+  }, [sections.length]);
 
   const toggle = (id: string) =>
     setExpanded((prev) => ({ ...prev, [id]: !prev[id] }));
@@ -49,11 +56,31 @@ export function BookViewerPage() {
         </div>
       )}
 
-      {sections && (
+      {sectionsData && (
         <>
-          <h1 style={{ margin: '0 0 32px', fontSize: 26, color: '#1a202c' }}>
-            📖 {book?.title ?? 'Book'}
-          </h1>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 32, gap: 16, flexWrap: 'wrap' }}>
+            <h1 style={{ margin: 0, fontSize: 26, color: '#1a202c' }}>
+              📖 {book?.title ?? 'Book'}
+            </h1>
+            {role !== 'GUEST' && (
+              <button
+                onClick={() => navigate(`/new-transformation?bookId=${bookId}`)}
+                style={{
+                  padding: '9px 18px',
+                  background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+                  color: '#fff',
+                  border: 'none',
+                  borderRadius: 8,
+                  fontSize: 13,
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                ✨ Transform
+              </button>
+            )}
+          </div>
 
           {sections.length === 0 && (
             <div style={{ color: '#a0aec0', padding: '40px 0', textAlign: 'center' }}>
@@ -63,7 +90,6 @@ export function BookViewerPage() {
 
           {sections.map((section, idx) => (
             <div key={section.sectionId} style={{ marginBottom: 12 }}>
-              {/* Section header / toggle */}
               <button
                 onClick={() => toggle(section.sectionId)}
                 style={{
@@ -93,7 +119,6 @@ export function BookViewerPage() {
                 </span>
               </button>
 
-              {/* Paragraphs */}
               {expanded[section.sectionId] && (
                 <div
                   style={{
