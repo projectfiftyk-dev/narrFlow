@@ -26,11 +26,17 @@ export interface BookSection {
   content: SectionContent[];
 }
 
+export interface VoiceTest {
+  language: string;
+  url: string;
+}
+
 export interface Voice {
   id: string;
   slug: string;
   friendlyName: string;
   description?: string;
+  tests?: VoiceTest[];
 }
 
 export type TransformationStatus =

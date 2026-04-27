@@ -85,6 +85,7 @@ async def get_task_content(task_id: str):
                 text=payload_by_number[num]["text"],
                 personaId=payload_by_number[num].get("personaId"),
                 audioUrl=result_by_number[num]["audioUrl"],
+                emotion=payload_by_number[num].get("emotion") or None,
             )
             for num in sorted(payload_by_number)
             if num in result_by_number

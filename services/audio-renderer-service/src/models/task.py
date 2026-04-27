@@ -10,11 +10,20 @@ class TaskStatus(str, Enum):
     FAILED = "FAILED"
 
 
+class Emotion(str, Enum):
+    NEUTRAL = "NEUTRAL"
+    HAPPY = "HAPPY"
+    SAD = "SAD"
+    ANGRY = "ANGRY"
+    FEARFUL = "FEARFUL"
+    SURPRISED = "SURPRISED"
+
+
 class SegmentInput(BaseModel):
     segmentNumber: int
     text: str
     voiceId: str
-    tone: str | None = None
+    emotion: Emotion = Emotion.NEUTRAL
     personaId: str | None = None
     transformationId: str | None = None
 
@@ -50,6 +59,7 @@ class ResolvedSegment(BaseModel):
     text: str
     personaId: str | None
     audioUrl: str
+    emotion: Emotion | None = None
 
 
 class TaskContentResponse(BaseModel):

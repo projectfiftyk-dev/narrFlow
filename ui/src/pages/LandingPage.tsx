@@ -1,86 +1,211 @@
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 
 const GRADIENT = 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)';
 
-function NavBar({ onScrollTo }: { onScrollTo: (id: string) => void }) {
-  return (
-    <nav
-      style={{
-        position: 'fixed',
-        top: 0,
-        left: 0,
-        right: 0,
-        zIndex: 100,
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        padding: '0 48px',
-        height: 64,
-        background: 'rgba(26, 32, 44, 0.95)',
-        backdropFilter: 'blur(8px)',
-        boxShadow: '0 1px 0 rgba(255,255,255,0.06)',
-      }}
-    >
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-        <span style={{ fontSize: 28 }}>🎧</span>
-        <span
-          style={{
-            fontSize: 20,
-            fontWeight: 700,
-            background: GRADIENT,
-            WebkitBackgroundClip: 'text',
-            WebkitTextFillColor: 'transparent',
-            backgroundClip: 'text',
-          }}
-        >
-          narrFlow
-        </span>
-      </div>
+function useMobile() {
+  const [isMobile, setIsMobile] = useState(() => window.innerWidth < 768);
+  useEffect(() => {
+    const handler = () => setIsMobile(window.innerWidth < 768);
+    window.addEventListener('resize', handler);
+    return () => window.removeEventListener('resize', handler);
+  }, []);
+  return isMobile;
+}
 
-      <div style={{ display: 'flex', alignItems: 'center', gap: 32 }}>
-        {['features', 'how-it-works', 'get-started'].map((id) => (
+const NAV_LINKS = [
+  { id: 'features', label: 'Features' },
+  { id: 'how-it-works', label: 'How It Works' },
+  { id: 'get-started', label: 'Get Started' },
+];
+
+function NavBar({ onScrollTo }: { onScrollTo: (id: string) => void }) {
+  const isMobile = useMobile();
+  const [menuOpen, setMenuOpen] = useState(false);
+
+  const handleNavClick = (id: string) => {
+    onScrollTo(id);
+    setMenuOpen(false);
+  };
+
+  const barColor = menuOpen ? '#a78bfa' : '#a0aec0';
+
+  return (
+    <>
+      <nav
+        style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          zIndex: 100,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          padding: isMobile ? '0 20px' : '0 48px',
+          height: 64,
+          background: 'rgba(26, 32, 44, 0.97)',
+          backdropFilter: 'blur(8px)',
+          boxShadow: '0 1px 0 rgba(255,255,255,0.06)',
+        }}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <span style={{ fontSize: 28 }}>🎧</span>
+          <span
+            style={{
+              fontSize: 20,
+              fontWeight: 700,
+              background: GRADIENT,
+              WebkitBackgroundClip: 'text',
+              WebkitTextFillColor: 'transparent',
+              backgroundClip: 'text',
+            }}
+          >
+            narrFlow
+          </span>
+          {!isMobile && (
+            <span
+              style={{
+                marginLeft: 8,
+                padding: '2px 8px',
+                background: 'rgba(234,179,8,0.15)',
+                border: '1px solid rgba(234,179,8,0.35)',
+                borderRadius: 6,
+                fontSize: 10,
+                fontWeight: 700,
+                color: '#fbbf24',
+                letterSpacing: '0.06em',
+                textTransform: 'uppercase',
+              }}
+            >
+              Demo
+            </span>
+          )}
+        </div>
+
+        {isMobile ? (
           <button
-            key={id}
-            onClick={() => onScrollTo(id)}
+            onClick={() => setMenuOpen((o) => !o)}
+            aria-label="Toggle menu"
             style={{
               background: 'none',
               border: 'none',
-              color: '#a0aec0',
-              fontSize: 14,
-              fontWeight: 500,
               cursor: 'pointer',
-              padding: '4px 0',
-              textTransform: 'capitalize',
-              letterSpacing: '0.02em',
-              transition: 'color 0.2s',
+              padding: '8px',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 5,
             }}
-            onMouseEnter={(e) => ((e.target as HTMLButtonElement).style.color = '#fff')}
-            onMouseLeave={(e) => ((e.target as HTMLButtonElement).style.color = '#a0aec0')}
           >
-            {id.replace(/-/g, ' ')}
+            <span style={{ display: 'block', width: 24, height: 2, background: barColor, transition: 'background 0.2s' }} />
+            <span style={{ display: 'block', width: 24, height: 2, background: barColor, transition: 'background 0.2s' }} />
+            <span style={{ display: 'block', width: 24, height: 2, background: barColor, transition: 'background 0.2s' }} />
           </button>
-        ))}
-        <button
-          onClick={() => onScrollTo('get-started')}
+        ) : (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 32 }}>
+            {NAV_LINKS.map(({ id, label }) => (
+              <button
+                key={id}
+                onClick={() => onScrollTo(id)}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  color: '#a0aec0',
+                  fontSize: 14,
+                  fontWeight: 500,
+                  cursor: 'pointer',
+                  padding: '4px 0',
+                  letterSpacing: '0.02em',
+                  transition: 'color 0.2s',
+                }}
+                onMouseEnter={(e) => ((e.target as HTMLButtonElement).style.color = '#fff')}
+                onMouseLeave={(e) => ((e.target as HTMLButtonElement).style.color = '#a0aec0')}
+              >
+                {label}
+              </button>
+            ))}
+            <button
+              onClick={() => onScrollTo('get-started')}
+              style={{
+                padding: '8px 20px',
+                background: GRADIENT,
+                color: '#fff',
+                border: 'none',
+                borderRadius: 8,
+                fontSize: 14,
+                fontWeight: 600,
+                cursor: 'pointer',
+              }}
+            >
+              Get Started
+            </button>
+          </div>
+        )}
+      </nav>
+
+      {isMobile && menuOpen && (
+        <div
           style={{
-            padding: '8px 20px',
-            background: GRADIENT,
-            color: '#fff',
-            border: 'none',
-            borderRadius: 8,
-            fontSize: 14,
-            fontWeight: 600,
-            cursor: 'pointer',
+            position: 'fixed',
+            top: 64,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            zIndex: 99,
+            background: 'rgba(15, 17, 23, 0.98)',
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: 0,
           }}
         >
-          Get Started
-        </button>
-      </div>
-    </nav>
+          {NAV_LINKS.map(({ id, label }) => (
+            <button
+              key={id}
+              onClick={() => handleNavClick(id)}
+              style={{
+                background: 'none',
+                border: 'none',
+                borderBottom: '1px solid rgba(255,255,255,0.06)',
+                color: '#e2e8f0',
+                fontSize: 22,
+                fontWeight: 600,
+                cursor: 'pointer',
+                padding: '22px 0',
+                width: '100%',
+                textAlign: 'center',
+              }}
+            >
+              {label}
+            </button>
+          ))}
+          <button
+            onClick={() => handleNavClick('get-started')}
+            style={{
+              marginTop: 40,
+              padding: '14px 48px',
+              background: GRADIENT,
+              color: '#fff',
+              border: 'none',
+              borderRadius: 10,
+              fontSize: 18,
+              fontWeight: 600,
+              cursor: 'pointer',
+              boxShadow: '0 4px 24px rgba(102,126,234,0.4)',
+            }}
+          >
+            Get Started
+          </button>
+        </div>
+      )}
+    </>
   );
 }
 
 function HeroSection({ onScrollTo }: { onScrollTo: (id: string) => void }) {
+  const isMobile = useMobile();
+
   return (
     <section
       style={{
@@ -90,13 +215,12 @@ function HeroSection({ onScrollTo }: { onScrollTo: (id: string) => void }) {
         alignItems: 'center',
         justifyContent: 'center',
         textAlign: 'center',
-        padding: '120px 48px 80px',
+        padding: isMobile ? '100px 24px 60px' : '120px 48px 80px',
         background: '#0f1117',
         position: 'relative',
         overflow: 'hidden',
       }}
     >
-      {/* Background glow */}
       <div
         style={{
           position: 'absolute',
@@ -109,6 +233,26 @@ function HeroSection({ onScrollTo }: { onScrollTo: (id: string) => void }) {
           pointerEvents: 'none',
         }}
       />
+
+      <div
+        style={{
+          display: 'inline-flex',
+          alignItems: 'center',
+          gap: 8,
+          padding: '5px 14px',
+          background: 'rgba(234,179,8,0.1)',
+          border: '1px solid rgba(234,179,8,0.35)',
+          borderRadius: 100,
+          fontSize: 12,
+          color: '#fbbf24',
+          fontWeight: 700,
+          marginBottom: 16,
+          letterSpacing: '0.06em',
+          textTransform: 'uppercase',
+        }}
+      >
+        <span>🚧</span> Early Access Demo — More coming soon
+      </div>
 
       <div
         style={{
@@ -131,7 +275,7 @@ function HeroSection({ onScrollTo }: { onScrollTo: (id: string) => void }) {
       <h1
         style={{
           margin: '0 0 24px',
-          fontSize: 'clamp(40px, 6vw, 72px)',
+          fontSize: 'clamp(36px, 6vw, 72px)',
           fontWeight: 800,
           lineHeight: 1.1,
           color: '#fff',
@@ -154,14 +298,14 @@ function HeroSection({ onScrollTo }: { onScrollTo: (id: string) => void }) {
       <p
         style={{
           margin: '0 0 48px',
-          fontSize: 18,
+          fontSize: isMobile ? 16 : 18,
           color: '#718096',
           maxWidth: 560,
           lineHeight: 1.7,
         }}
       >
-        narrFlow transforms your books into immersive audiobooks where every character
-        speaks in their own unique AI-generated voice.
+        narrFlow is an early-stage startup bringing books to life with unique AI-generated voices
+        for every character. We're just getting started — exciting features are on the way.
       </p>
 
       <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', justifyContent: 'center' }}>
@@ -179,7 +323,7 @@ function HeroSection({ onScrollTo }: { onScrollTo: (id: string) => void }) {
             boxShadow: '0 4px 24px rgba(102,126,234,0.4)',
           }}
         >
-          Get Started Free
+          Try the Demo
         </button>
         <button
           onClick={() => onScrollTo('how-it-works')}
@@ -201,21 +345,21 @@ function HeroSection({ onScrollTo }: { onScrollTo: (id: string) => void }) {
       <div
         style={{
           marginTop: 80,
-          padding: '32px 40px',
+          padding: isMobile ? '24px 20px' : '32px 40px',
           background: 'rgba(255,255,255,0.04)',
           border: '1px solid rgba(255,255,255,0.08)',
           borderRadius: 16,
           display: 'flex',
-          gap: 48,
+          gap: isMobile ? 24 : 48,
           flexWrap: 'wrap',
           justifyContent: 'center',
         }}
       >
         {[
-          { value: '100+', label: 'Books Supported' },
-          { value: '30+', label: 'AI Voices' },
-          { value: '∞', label: 'Personas per Book' },
-        ].map(({ value, label }) => (
+          { value: '~10', label: 'Demo Books', note: 'more coming soon' },
+          { value: '5', label: 'AI Voices', note: 'curated selection' },
+          { value: '∞', label: 'Personas', note: 'future feature' },
+        ].map(({ value, label, note }) => (
           <div key={label} style={{ textAlign: 'center' }}>
             <div
               style={{
@@ -230,6 +374,7 @@ function HeroSection({ onScrollTo }: { onScrollTo: (id: string) => void }) {
               {value}
             </div>
             <div style={{ fontSize: 13, color: '#718096', marginTop: 4 }}>{label}</div>
+            <div style={{ fontSize: 11, color: '#4a5568', marginTop: 2, fontStyle: 'italic' }}>{note}</div>
           </div>
         ))}
       </div>
@@ -238,12 +383,14 @@ function HeroSection({ onScrollTo }: { onScrollTo: (id: string) => void }) {
 }
 
 function FeaturesSection() {
+  const isMobile = useMobile();
+
   const features = [
     {
       icon: '🎭',
       title: 'Multi-Persona Narration',
       description:
-        'Assign unique AI voices to each character or author. Every voice is distinct, making the listening experience feel alive.',
+        'Assign unique AI voices to each character or narrator. Every voice is distinct, making the listening experience feel alive.',
     },
     {
       icon: '⚡',
@@ -255,7 +402,7 @@ function FeaturesSection() {
       icon: '📚',
       title: 'Smart Book Library',
       description:
-        'Upload and manage your book collection. Organize transformations, resume where you left off, and replay any time.',
+        'Browse the curated demo library. Organize transformations, resume where you left off, and replay any time.',
     },
     {
       icon: '🎧',
@@ -281,7 +428,7 @@ function FeaturesSection() {
     <section
       id="features"
       style={{
-        padding: '100px 48px',
+        padding: isMobile ? '60px 20px' : '100px 48px',
         background: '#f7fafc',
       }}
     >
@@ -290,7 +437,7 @@ function FeaturesSection() {
           <h2
             style={{
               margin: '0 0 16px',
-              fontSize: 40,
+              fontSize: isMobile ? 32 : 40,
               fontWeight: 800,
               color: '#1a202c',
             }}
@@ -308,7 +455,7 @@ function FeaturesSection() {
               great audiobooks
             </span>
           </h2>
-          <p style={{ margin: 0, color: '#718096', fontSize: 18 }}>
+          <p style={{ margin: 0, color: '#718096', fontSize: isMobile ? 16 : 18 }}>
             Powerful features that make narrFlow the best way to experience your library.
           </p>
         </div>
@@ -316,7 +463,7 @@ function FeaturesSection() {
         <div
           style={{
             display: 'grid',
-            gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))',
+            gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fill, minmax(300px, 1fr))',
             gap: 24,
           }}
         >
@@ -326,7 +473,7 @@ function FeaturesSection() {
               style={{
                 background: '#fff',
                 borderRadius: 16,
-                padding: 32,
+                padding: isMobile ? 24 : 32,
                 border: '1px solid #e2e8f0',
                 boxShadow: '0 2px 8px rgba(0,0,0,0.04)',
               }}
@@ -347,16 +494,18 @@ function FeaturesSection() {
 }
 
 function HowItWorksSection() {
+  const isMobile = useMobile();
+
   const steps = [
     {
       step: '01',
-      title: 'Add Your Book',
-      description: 'Upload or select a book from the library. narrFlow parses it into sections and identifies all authors and speakers.',
+      title: 'Choose Your Book',
+      description: 'Browse the demo library and pick a book. narrFlow parses it into sections and identifies all characters and speakers.',
     },
     {
       step: '02',
       title: 'Assign Voices',
-      description: 'Pick from 30+ ElevenLabs AI voices. Map each character or narrator to the perfect voice for the story.',
+      description: 'Choose from 5 carefully curated ElevenLabs AI voices. Map each character or narrator to the perfect voice for the story.',
     },
     {
       step: '03',
@@ -374,7 +523,7 @@ function HowItWorksSection() {
     <section
       id="how-it-works"
       style={{
-        padding: '100px 48px',
+        padding: isMobile ? '60px 20px' : '100px 48px',
         background: '#0f1117',
       }}
     >
@@ -383,27 +532,27 @@ function HowItWorksSection() {
           <h2
             style={{
               margin: '0 0 16px',
-              fontSize: 40,
+              fontSize: isMobile ? 32 : 40,
               fontWeight: 800,
               color: '#fff',
             }}
           >
             How It Works
           </h2>
-          <p style={{ margin: 0, color: '#718096', fontSize: 18 }}>
+          <p style={{ margin: 0, color: '#718096', fontSize: isMobile ? 16 : 18 }}>
             From book to audiobook in four simple steps.
           </p>
         </div>
 
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 32 }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
           {steps.map(({ step, title, description }, i) => (
             <div
               key={step}
               style={{
                 display: 'flex',
                 alignItems: 'flex-start',
-                gap: 32,
-                padding: 32,
+                gap: isMobile ? 20 : 32,
+                padding: isMobile ? 20 : 32,
                 background: 'rgba(255,255,255,0.03)',
                 border: '1px solid rgba(255,255,255,0.06)',
                 borderRadius: 16,
@@ -411,8 +560,8 @@ function HowItWorksSection() {
             >
               <div
                 style={{
-                  minWidth: 56,
-                  height: 56,
+                  minWidth: 52,
+                  height: 52,
                   borderRadius: 14,
                   background: i % 2 === 0 ? GRADIENT : 'rgba(102,126,234,0.12)',
                   border: i % 2 !== 0 ? '1px solid rgba(102,126,234,0.3)' : 'none',
@@ -422,20 +571,37 @@ function HowItWorksSection() {
                   fontSize: 15,
                   fontWeight: 800,
                   color: i % 2 === 0 ? '#fff' : '#a78bfa',
+                  flexShrink: 0,
                 }}
               >
                 {step}
               </div>
               <div>
-                <h3 style={{ margin: '0 0 8px', fontSize: 20, fontWeight: 700, color: '#fff' }}>
+                <h3 style={{ margin: '0 0 8px', fontSize: isMobile ? 17 : 20, fontWeight: 700, color: '#fff' }}>
                   {title}
                 </h3>
-                <p style={{ margin: 0, fontSize: 15, color: '#718096', lineHeight: 1.7 }}>
+                <p style={{ margin: 0, fontSize: isMobile ? 14 : 15, color: '#718096', lineHeight: 1.7 }}>
                   {description}
                 </p>
               </div>
             </div>
           ))}
+        </div>
+
+        <div
+          style={{
+            marginTop: 48,
+            padding: isMobile ? '20px' : '28px 36px',
+            background: 'rgba(102,126,234,0.07)',
+            border: '1px solid rgba(102,126,234,0.2)',
+            borderRadius: 14,
+            textAlign: 'center',
+          }}
+        >
+          <p style={{ margin: 0, fontSize: isMobile ? 14 : 15, color: '#a78bfa', lineHeight: 1.8 }}>
+            <strong style={{ color: '#c4b5fd' }}>Stay tuned</strong> — new books and features are being added regularly.
+            Follow along as narrFlow grows into the full platform it's becoming.
+          </p>
         </div>
       </div>
     </section>
@@ -443,35 +609,31 @@ function HowItWorksSection() {
 }
 
 function GetStartedSection({ onLogin, onGuest }: { onLogin: () => void; onGuest: () => void }) {
+  const isMobile = useMobile();
+
   return (
     <section
       id="get-started"
       style={{
-        padding: '100px 48px',
+        padding: isMobile ? '60px 20px' : '100px 48px',
         background: '#f7fafc',
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
       }}
     >
-      <div
-        style={{
-          maxWidth: 560,
-          width: '100%',
-          textAlign: 'center',
-        }}
-      >
+      <div style={{ maxWidth: 560, width: '100%', textAlign: 'center' }}>
         <h2
           style={{
             margin: '0 0 16px',
-            fontSize: 40,
+            fontSize: isMobile ? 32 : 40,
             fontWeight: 800,
             color: '#1a202c',
           }}
         >
           Ready to start listening?
         </h2>
-        <p style={{ margin: '0 0 48px', fontSize: 18, color: '#718096', lineHeight: 1.7 }}>
+        <p style={{ margin: '0 0 48px', fontSize: isMobile ? 16 : 18, color: '#718096', lineHeight: 1.7 }}>
           Sign in to save your library and transformations, or jump straight in as a guest.
         </p>
 
@@ -479,7 +641,7 @@ function GetStartedSection({ onLogin, onGuest }: { onLogin: () => void; onGuest:
           style={{
             background: '#fff',
             borderRadius: 20,
-            padding: 40,
+            padding: isMobile ? 28 : 40,
             border: '1px solid #e2e8f0',
             boxShadow: '0 4px 24px rgba(0,0,0,0.06)',
           }}
@@ -549,17 +711,21 @@ function GetStartedSection({ onLogin, onGuest }: { onLogin: () => void; onGuest:
 }
 
 function Footer() {
+  const isMobile = useMobile();
+
   return (
     <footer
       style={{
-        padding: '32px 48px',
+        padding: isMobile ? '28px 20px' : '32px 48px',
         background: '#0f1117',
         borderTop: '1px solid rgba(255,255,255,0.06)',
         display: 'flex',
         alignItems: 'center',
-        justifyContent: 'space-between',
+        justifyContent: isMobile ? 'center' : 'space-between',
+        flexDirection: isMobile ? 'column' : 'row',
         flexWrap: 'wrap',
-        gap: 16,
+        gap: 12,
+        textAlign: isMobile ? 'center' : 'left',
       }}
     >
       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -578,7 +744,7 @@ function Footer() {
         </span>
       </div>
       <p style={{ margin: 0, fontSize: 13, color: '#4a5568' }}>
-        Multi-Persona Audiobook Experience
+        Early Access Demo · More features coming soon
       </p>
     </footer>
   );
@@ -589,9 +755,7 @@ export function LandingPage() {
 
   const scrollTo = (id: string) => {
     const el = document.getElementById(id);
-    if (el) {
-      el.scrollIntoView({ behavior: 'smooth' });
-    }
+    if (el) el.scrollIntoView({ behavior: 'smooth' });
   };
 
   return (

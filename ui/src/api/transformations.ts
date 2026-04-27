@@ -34,3 +34,6 @@ export const updateVisibility = (
 
 export const triggerGeneration = (id: string): Promise<void> =>
   api.post(`/transformations/${id}/generate`).then(() => undefined);
+
+export const deleteTransformation = (id: string): Promise<void> =>
+  api.delete(`/transformations/${id}`).then(() => undefined);

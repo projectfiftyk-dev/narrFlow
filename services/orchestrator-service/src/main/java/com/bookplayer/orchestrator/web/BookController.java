@@ -60,14 +60,12 @@ public class BookController {
             @RequestParam(required = false) String search,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size) {
-        SecurityUtils.requireAuthenticated();
         log.debug("GET /books/{}/sections search='{}' page={} size={}", bookId, search, page, size);
         return bookService.getSections(bookId, search, PageRequest.of(page, size));
     }
 
     @GetMapping("/{bookId}/sections/{sectionId}")
     public BookSection getSection(@PathVariable String bookId, @PathVariable String sectionId) {
-        SecurityUtils.requireAuthenticated();
         log.debug("GET /books/{}/sections/{}", bookId, sectionId);
         return bookService.getSection(bookId, sectionId);
     }

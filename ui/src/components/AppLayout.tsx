@@ -83,7 +83,12 @@ export function AppLayout({ children }: Props) {
             padding: '0 20px 28px',
           }}
         >
-          <span style={{ color: '#fff', fontSize: 17, fontWeight: 700 }}>narrFlow</span>
+          <span
+            onClick={role === 'GUEST' ? () => navigate('/') : undefined}
+            style={{ color: '#fff', fontSize: 17, fontWeight: 700, cursor: role === 'GUEST' ? 'pointer' : 'default' }}
+          >
+            narrFlow
+          </span>
           <button
             onClick={closeSidebar}
             aria-label="Close menu"
@@ -98,7 +103,16 @@ export function AppLayout({ children }: Props) {
       {/* Desktop logo + role badge */}
       {!isMobile && (
         <div style={{ padding: '0 20px 32px' }}>
-          <div style={{ color: '#fff', fontSize: 17, fontWeight: 700, marginBottom: 6 }}>
+          <div
+            onClick={role === 'GUEST' ? () => navigate('/') : undefined}
+            style={{
+              color: '#fff',
+              fontSize: 17,
+              fontWeight: 700,
+              marginBottom: 6,
+              cursor: role === 'GUEST' ? 'pointer' : 'default',
+            }}
+          >
             narrFlow
           </div>
           {role === 'ADMIN' && (

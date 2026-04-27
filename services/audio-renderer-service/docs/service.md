@@ -1,6 +1,6 @@
 # Audio Renderer Service
 
-> **Role:** Stateless batch TTS engine with job tracking
+> **Role:** Stateless batch TTS engine with job tracking and curated voice management
 > **Stack:** Python 3.13 · FastAPI · Motor (MongoDB) · ElevenLabs SDK
 > **Status:** MVP — implemented
 
@@ -8,11 +8,9 @@
 
 ## What the service does
 
-The Audio Renderer does exactly two things:
-
 | Responsibility | Description |
 |---------------|-------------|
-| Voice Registry | Proxies ElevenLabs voices API and returns them in a normalized format |
+| Curated Voice Registry | Exposes a fixed set of 5 approved voices; generates test samples on startup |
 | Audio Generation | Converts batches of text segments into MP3 files, asynchronously |
 
 It is not a streaming engine, not an AI assistant, and not a real-time synthesizer. It accepts a batch of text segments, synthesizes each one via ElevenLabs, writes MP3 files to disk, and makes the results available for polling.
@@ -23,12 +21,21 @@ Spring Boot calls this service. The frontend never contacts it directly.
 
 ## Capabilities
 
-### Voice Registry
+### Curated Voice Registry
 
-- `GET /voices` calls the ElevenLabs API live and returns normalized voice objects.
-- An optional `?language=` query param (BCP-47 code) filters by language — e.g. `?language=ro` for Romanian, `?language=en` for English.
-- The voice `id` field is the ElevenLabs `voice_id`. Slug is derived from the voice name (lowercase, underscored). Description comes from the ElevenLabs `labels.description` field.
-- Voices can also be created, updated, and deleted in the local MongoDB registry for custom overrides (admin operation — no auth enforced at this layer).
+- `GET /voices` returns a fixed list of 5 curated voices — no live ElevenLabs call at request time.
+- The available voices are: **Rachel**, **Lily**, **Adam**, **Antoni**, **Josh**.
+- Each voice includes a `tests` array with pre-generated sample URLs for each supported language (`en`, `ro`).
+
+### Voice Test Samples (startup)
+
+On every startup the service checks whether test samples exist for all 5 curated voices in each supported language (`en`, `ro`). Missing samples are synthesized via ElevenLabs and written to disk. Existing files are skipped (idempotent).
+
+- Stored at: `tts-storage/tests/{voiceId}/{language}/sample.mp3`
+- Served at: `/audio/tests/{voiceId}/{language}/sample.mp3`
+- Sample texts:
+  - **English:** `"Hi, I am {name} and I'm glad to assist you."`
+  - **Romanian:** `"Salut, eu sunt {name}. Cu ce vă pot ajuta astăzi?"`
 
 ### TTS Job Engine
 
@@ -42,11 +49,43 @@ Spring Boot calls this service. The frontend never contacts it directly.
 ### What is NOT implemented (MVP scope)
 
 - No authentication or authorization (delegated to Spring Boot).
-- No tone processing — text is sent to ElevenLabs as plain text.
 - No retry logic on failed segments.
 - No S3 or CDN storage — local filesystem only.
 - No message broker (no Celery, no RabbitMQ).
 - No duplicate job detection.
+
+---
+
+## Emotion
+
+Each segment can carry an optional `emotion` field that slightly adjusts how the voice sounds. If omitted it defaults to `NEUTRAL`.
+
+Emotions are mapped to ElevenLabs `VoiceSettings` parameters (`stability`, `similarity_boost`, `style`):
+
+| Emotion | stability | similarity_boost | style | Effect |
+|---------|-----------|-----------------|-------|--------|
+| `NEUTRAL` | 0.75 | 0.75 | 0.00 | Balanced, consistent delivery |
+| `HAPPY` | 0.50 | 0.80 | 0.60 | Upbeat, expressive |
+| `SAD` | 0.85 | 0.70 | 0.30 | Slower, softer, subdued |
+| `ANGRY` | 0.35 | 0.90 | 0.80 | High energy, forceful |
+| `FEARFUL` | 0.40 | 0.75 | 0.50 | Tense, unsteady |
+| `SURPRISED` | 0.45 | 0.80 | 0.70 | Animated, sudden |
+
+> `style` requires the `eleven_multilingual_v2` model (already the default).
+
+---
+
+## Curated Voices
+
+| Friendly Name | Voice ID | Description |
+|---------------|----------|-------------|
+| Sarah | `EXAVITQu4vr4xnSDxMaL` | Soft, young adult female |
+| Lily | `pFZP5JQG7iQjIQuC4Bku` | Warm, expressive female |
+| Adam | `pNInz6obpgDQGcFmaJgB` | Deep, middle-aged male |
+| Antoni | `ErXwobaYiN019PkySvjV` | Well-rounded, young adult male |
+| Charlie | `IKne3meq5aSn9XLyUdCD` | Casual, middle-aged male |
+
+Supported languages for test samples: `en`, `ro`.
 
 ---
 
@@ -66,15 +105,7 @@ Spring Boot calls this service. The frontend never contacts it directly.
 
 #### `GET /voices`
 
-Fetches voices live from ElevenLabs and returns them in normalized format.
-
-Optional query param: `?language=<BCP-47 code>` — filters by language using ElevenLabs v2 search.
-
-```
-GET /voices          → all voices
-GET /voices?language=ro  → Romanian voices
-GET /voices?language=en  → English voices
-```
+Returns the 5 curated voices. Each voice includes a `tests` array with pre-generated sample URLs for every supported language (`en`, `ro`).
 
 **Response:**
 
@@ -84,51 +115,28 @@ GET /voices?language=en  → English voices
     "id": "EXAVITQu4vr4xnSDxMaL",
     "slug": "sarah",
     "friendlyName": "Sarah",
-    "description": "Mature, reassuring, confident"
+    "description": "Soft, young adult female",
+    "tests": [
+      { "language": "en", "url": "/audio/tests/EXAVITQu4vr4xnSDxMaL/en/sample.mp3" },
+      { "language": "ro", "url": "/audio/tests/EXAVITQu4vr4xnSDxMaL/ro/sample.mp3" }
+    ]
   },
   {
-    "id": "JBFqnCBsd6RMkjVDRZzb",
-    "slug": "george",
-    "friendlyName": "George",
-    "description": "Warm, captivating storyteller"
+    "id": "pFZP5JQG7iQjIQuC4Bku",
+    "slug": "lily",
+    "friendlyName": "Lily",
+    "description": "Warm, expressive female",
+    "tests": [
+      { "language": "en", "url": "/audio/tests/pFZP5JQG7iQjIQuC4Bku/en/sample.mp3" },
+      { "language": "ro", "url": "/audio/tests/pFZP5JQG7iQjIQuC4Bku/ro/sample.mp3" }
+    ]
   }
 ]
 ```
 
----
-
-#### `POST /voices` → `201 Created`
-
-Registers a custom voice in the local MongoDB registry. `id` must be a valid ElevenLabs `voice_id`.
-
-```json
-{
-  "id": "EXAVITQu4vr4xnSDxMaL",
-  "slug": "sarah_narrator",
-  "friendlyName": "Sarah – Narrator",
-  "description": "Mature, reassuring female voice"
-}
-```
-
-Returns `409` if a voice with that `id` already exists.
+*(remaining voices follow the same shape)*
 
 ---
-
-#### `PUT /voices/{id}` → `200 OK`
-
-Updates metadata fields (`slug`, `friendlyName`, `description`). The `id` is immutable.
-
-```json
-{ "friendlyName": "Updated Name" }
-```
-
-Returns `404` if the voice does not exist. Returns `422` if the request body contains no updatable fields.
-
----
-
-#### `DELETE /voices/{id}` → `204 No Content`
-
-Removes a voice from the local registry. Returns `404` if not found.
 
 ---
 
@@ -146,14 +154,16 @@ Submits a batch of text segments for audio generation. Returns immediately.
     {
       "segmentNumber": 0,
       "text": "It was a dark and stormy night.",
-      "voiceId": "EXAVITQu4vr4xnSDxMaL",
+      "voiceId": "21m00Tcm4TlvDq8ikWAM",
+      "emotion": "ANGRY",
       "personaId": "persona_abc",
       "transformationId": "transform_001"
     },
     {
       "segmentNumber": 1,
       "text": "She whispered his name into the silence.",
-      "voiceId": "JBFqnCBsd6RMkjVDRZzb",
+      "voiceId": "TxGEqnHWrfWFTfGW9XjX",
+      "emotion": "SAD",
       "personaId": "persona_xyz",
       "transformationId": "transform_001"
     }
@@ -161,7 +171,7 @@ Submits a batch of text segments for audio generation. Returns immediately.
 }
 ```
 
-All fields except `segmentNumber`, `text`, and `voiceId` are optional metadata echoed back in the content endpoint.
+`emotion` is optional — defaults to `NEUTRAL` when omitted. Valid values: `NEUTRAL`, `HAPPY`, `SAD`, `ANGRY`, `FEARFUL`, `SURPRISED`. All other fields except `segmentNumber`, `text`, and `voiceId` are optional metadata echoed back in the content endpoint.
 
 **Response:**
 
@@ -223,11 +233,14 @@ Convenience endpoint for Spring Boot. Returns the fully resolved, playback-ready
       "segmentNumber": 0,
       "text": "It was a dark and stormy night.",
       "personaId": "persona_abc",
-      "audioUrl": "/audio/550e.../0.mp3"
+      "audioUrl": "/audio/550e.../0.mp3",
+      "emotion": "ANGRY"
     }
   ]
 }
 ```
+
+`emotion` is omitted from the segment when it was not set on the original request (i.e., the TTS service defaulted to `NEUTRAL` internally but does not echo it back as a field).
 
 **Response (not yet completed):** Returns the current status with `segments: null`.
 
@@ -237,7 +250,11 @@ Convenience endpoint for Spring Boot. Returns the fully resolved, playback-ready
 
 #### `GET /audio/{taskId}/{segmentNumber}.mp3`
 
-Serves the generated audio file directly. Mounted as a FastAPI `StaticFiles` route.
+Serves a generated task audio file directly. Mounted as a FastAPI `StaticFiles` route.
+
+#### `GET /audio/tests/{voiceId}/{language}/sample.mp3`
+
+Serves a pre-generated voice test sample directly.
 
 ---
 
@@ -259,19 +276,21 @@ PENDING → PROCESSING → COMPLETED
 
 ## Storage
 
-Audio files are written to `tts-storage/` relative to the working directory:
-
 ```
 tts-storage/
+  tests/
+    {voiceId}/
+      en/
+        sample.mp3        ← pre-generated on startup
+      ro/
+        sample.mp3        ← pre-generated on startup
   {taskId}/
     0.mp3
     1.mp3
     2.mp3
 ```
 
-File naming is deterministic (`{segmentNumber}.mp3`) so re-runs safely overwrite rather than orphan files.
-
-MongoDB stores job metadata, status, payload, and result URLs. The filesystem holds only binary MP3 files. Files are disposable derivatives — regenerable from the job payload at any time.
+File naming is deterministic so re-runs safely overwrite rather than orphan files. MongoDB stores job metadata, status, payload, and result URLs. Files are disposable derivatives — regenerable from the job payload at any time.
 
 ---
 
@@ -281,7 +300,7 @@ All configuration is via environment variables. Copy `.env.example` to `.env` an
 
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
-| `ELEVENLABS_API_KEY` | Yes | — | ElevenLabs API key (needs `voices_read` + `text_to_speech` permissions) |
+| `ELEVENLABS_API_KEY` | Yes | — | ElevenLabs API key (needs `text_to_speech` permission) |
 | `ELEVENLABS_MODEL` | No | `eleven_multilingual_v2` | ElevenLabs model ID |
 | `MONGODB_URL` | No | `mongodb://localhost:27017` | MongoDB connection string |
 | `MONGODB_DB_NAME` | No | `audio_renderer` | Database name |
@@ -291,8 +310,7 @@ All configuration is via environment variables. Copy `.env.example` to `.env` an
 ### ElevenLabs API Key Permissions
 
 When creating your API key in the ElevenLabs dashboard, enable:
-- **Voices (read)** — required for `GET /voices`
-- **Text to Speech** — required for audio synthesis
+- **Text to Speech** — required for audio synthesis and test sample generation
 
 ---
 
@@ -316,7 +334,9 @@ uv run uvicorn src.main:app --reload --port 8081
 
 Swagger UI: `http://localhost:8081/docs`
 
-On startup the service creates the `tts-storage/` directory if it does not exist.
+On startup the service:
+1. Creates `tts-storage/` directory if it does not exist.
+2. Generates test samples for all 5 curated voices × 2 languages (skips existing files).
 
 ---
 
@@ -342,18 +362,19 @@ uv run pytest tests/services/test_tts.py -v
 
 ```
 src/
-  main.py            # FastAPI app, lifespan, static file mount
+  main.py            # FastAPI app, lifespan, static file mount, startup sample generation
   config.py          # Environment-based settings (pydantic-settings)
   database.py        # Motor async MongoDB client singleton
   models/
-    voice.py         # Voice schema
+    voice.py         # Voice schema, CURATED_VOICES, VoiceTestResponse
     task.py          # TTSTask, SegmentInput/Result, status enum, response models
   controllers/
-    voices_controller.py   # GET/POST/PUT/DELETE /voices
+    voices_controller.py   # GET /voices (includes test sample URLs per language)
     tasks_controller.py    # POST/GET /tts/tasks, GET /tts/tasks/{id}/content
   services/
     tts.py           # Background worker: ElevenLabs synthesis, job state machine
-    storage.py       # File path and URL helpers
+    storage.py       # File path and URL helpers (tasks + test samples)
+    voice_samples.py # Startup sample generation for curated voices
 tests/
   conftest.py
   test_voices.py
@@ -362,7 +383,8 @@ tests/
     test_tts.py
     test_storage.py
 docs/
-  service.md         # this file
+  service.md                          # this file
+  audio-renderer.postman_collection.json  # Postman collection for all endpoints
 ```
 
 ---
@@ -386,3 +408,5 @@ assemble Content object  → persist to MongoDB
 ```
 
 Audio URLs returned by this service (`/audio/{taskId}/{n}.mp3`) should be prefixed with this service's base URL before being stored in the Spring Boot `Content` document, so the frontend can resolve them directly.
+
+For persona voice previews, Spring Boot can read the `tests` array returned by `GET /voices` and prefix the `url` values with this service's base URL.

@@ -87,4 +87,13 @@ public class TransformationController {
         log.info("POST /transformations/{}/generate user={}", transformationId, user.userId());
         return transformationService.triggerGeneration(transformationId, user);
     }
+
+    @DeleteMapping("/{transformationId}")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void deleteTransformation(@PathVariable String transformationId) {
+        SecurityUtils.requireAuthenticated();
+        AuthenticatedUser user = SecurityUtils.currentUser();
+        log.info("DELETE /transformations/{} user={}", transformationId, user.userId());
+        transformationService.deleteTransformation(transformationId, user);
+    }
 }

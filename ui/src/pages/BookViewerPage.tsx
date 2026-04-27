@@ -4,6 +4,59 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { fetchBooks, fetchBookSections } from '../api/books';
 import { useRole } from '../features/auth/useRole';
 
+const GRADIENT = 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)';
+
+function SectionSkeleton() {
+  return (
+    <div style={{ marginBottom: 8, paddingBottom: 8, borderBottom: '1px solid #edf2f7' }}>
+      <div
+        style={{
+          height: 20,
+          width: '45%',
+          background: '#e2e8f0',
+          borderRadius: 4,
+          animation: 'skeleton-pulse 1.6s ease-in-out infinite',
+        }}
+      />
+    </div>
+  );
+}
+
+function SectionContent({ content }: { content: { text: string; author: string }[] }) {
+  return (
+    <div style={{ paddingTop: 16, paddingBottom: 24 }}>
+      {content.map((para, pIdx) => (
+        <div key={pIdx} style={{ marginBottom: 20 }}>
+          <span
+            style={{
+              display: 'block',
+              fontSize: 10,
+              fontWeight: 700,
+              color: '#9f7aea',
+              textTransform: 'uppercase',
+              letterSpacing: '0.1em',
+              marginBottom: 4,
+            }}
+          >
+            {para.author}
+          </span>
+          <p
+            style={{
+              margin: 0,
+              color: '#2d3748',
+              lineHeight: 1.85,
+              fontSize: 15,
+              fontFamily: 'Georgia, "Times New Roman", serif',
+            }}
+          >
+            {para.text}
+          </p>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export function BookViewerPage() {
   const { bookId } = useParams<{ bookId: string }>();
   const navigate = useNavigate();
@@ -40,9 +93,14 @@ export function BookViewerPage() {
     setExpanded((prev) => ({ ...prev, [id]: !prev[id] }));
 
   return (
-    <div style={{ maxWidth: 760, margin: '0 auto', padding: '40px 24px' }}>
+    <div style={{ maxWidth: '70%', margin: '0 auto', padding: '40px 24px' }}>
       {isLoading && (
-        <div style={{ color: '#a0aec0', padding: 40, textAlign: 'center' }}>Loading…</div>
+        <>
+          <div style={{ height: 28, width: 240, background: '#e2e8f0', borderRadius: 6, marginBottom: 32, animation: 'skeleton-pulse 1.6s ease-in-out infinite' }} />
+          {Array.from({ length: 5 }).map((_, i) => (
+            <SectionSkeleton key={i} />
+          ))}
+        </>
       )}
 
       {isError && (
@@ -58,7 +116,18 @@ export function BookViewerPage() {
 
       {sectionsData && (
         <>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 32, gap: 16, flexWrap: 'wrap' }}>
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              marginBottom: 32,
+              gap: 16,
+              flexWrap: 'wrap',
+              paddingBottom: 20,
+              borderBottom: '2px solid #e2e8f0',
+            }}
+          >
             <h1 style={{ margin: 0, fontSize: 26, color: '#1a202c' }}>
               📖 {book?.title ?? 'Book'}
             </h1>
@@ -67,7 +136,7 @@ export function BookViewerPage() {
                 onClick={() => navigate(`/new-transformation?bookId=${bookId}`)}
                 style={{
                   padding: '9px 18px',
-                  background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+                  background: GRADIENT,
                   color: '#fff',
                   border: 'none',
                   borderRadius: 8,
@@ -88,17 +157,16 @@ export function BookViewerPage() {
             </div>
           )}
 
-          {sections.map((section, idx) => (
-            <div key={section.sectionId} style={{ marginBottom: 12 }}>
+          {sections.map((section) => (
+            <div key={section.sectionId} style={{ borderBottom: '1px solid #edf2f7' }}>
               <button
                 onClick={() => toggle(section.sectionId)}
                 style={{
                   width: '100%',
                   textAlign: 'left',
-                  background: '#f7fafc',
-                  border: '1px solid #e2e8f0',
-                  borderRadius: expanded[section.sectionId] ? '8px 8px 0 0' : 8,
-                  padding: '14px 18px',
+                  background: 'transparent',
+                  border: 'none',
+                  padding: '14px 0',
                   fontSize: 15,
                   fontWeight: 600,
                   color: '#2d3748',
@@ -108,41 +176,14 @@ export function BookViewerPage() {
                   alignItems: 'center',
                 }}
               >
-                <span>
-                  <span style={{ color: '#a0aec0', fontSize: 12, fontWeight: 400, marginRight: 10 }}>
-                    {idx + 1}.
-                  </span>
-                  {section.sectionName}
-                </span>
-                <span style={{ color: '#a0aec0', fontSize: 13 }}>
+                <span>{section.sectionName}</span>
+                <span style={{ color: '#a0aec0', fontSize: 11 }}>
                   {expanded[section.sectionId] ? '▲' : '▼'}
                 </span>
               </button>
 
               {expanded[section.sectionId] && (
-                <div
-                  style={{
-                    border: '1px solid #e2e8f0',
-                    borderTop: 'none',
-                    borderRadius: '0 0 8px 8px',
-                    padding: '4px 24px 8px',
-                    background: '#fff',
-                  }}
-                >
-                  {section.content.map((para, pIdx) => (
-                    <p
-                      key={pIdx}
-                      style={{
-                        margin: '14px 0',
-                        color: '#4a5568',
-                        lineHeight: 1.8,
-                        fontSize: 15,
-                      }}
-                    >
-                      {para.text}
-                    </p>
-                  ))}
-                </div>
+                <SectionContent content={section.content} />
               )}
             </div>
           ))}

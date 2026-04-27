@@ -29,6 +29,49 @@ const SAMPLE_SECTIONS = JSON.stringify(
   2
 );
 
+function BookCardSkeleton() {
+  return (
+    <div
+      style={{
+        border: '1px solid #e2e8f0',
+        borderRadius: 8,
+        padding: 24,
+        background: '#fff',
+      }}
+    >
+      <div
+        style={{
+          width: 40,
+          height: 40,
+          borderRadius: 6,
+          background: '#e2e8f0',
+          marginBottom: 14,
+          animation: 'skeleton-pulse 1.6s ease-in-out infinite',
+        }}
+      />
+      <div
+        style={{
+          height: 17,
+          width: '70%',
+          background: '#e2e8f0',
+          borderRadius: 4,
+          marginBottom: 10,
+          animation: 'skeleton-pulse 1.6s ease-in-out infinite',
+        }}
+      />
+      <div
+        style={{
+          height: 13,
+          width: '50%',
+          background: '#edf2f7',
+          borderRadius: 4,
+          animation: 'skeleton-pulse 1.6s ease-in-out infinite',
+        }}
+      />
+    </div>
+  );
+}
+
 function CreateBookModal({ onClose }: { onClose: () => void }) {
   const queryClient = useQueryClient();
   const [title, setTitle] = useState('');
@@ -242,7 +285,7 @@ export function BooksLibraryPage() {
   return (
     <div style={{ maxWidth: 960, margin: '0 auto', padding: '40px 24px' }}>
       {/* Header */}
-      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 28, gap: 16, flexWrap: 'wrap' }}>
+      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 0, gap: 16, flexWrap: 'wrap', paddingBottom: 20, borderBottom: '2px solid #e2e8f0' }}>
         <div>
           <h1 style={{ margin: '0 0 6px', fontSize: 26, color: '#1a202c' }}>📚 Books Library</h1>
           <p style={{ margin: 0, color: '#718096', fontSize: 14 }}>
@@ -270,23 +313,23 @@ export function BooksLibraryPage() {
       </div>
 
       {/* Search + sort bar */}
-      <div style={{ display: 'flex', gap: 10, marginBottom: 28, flexWrap: 'wrap' }}>
+      <div style={{ display: 'flex', gap: 10, marginTop: 20, marginBottom: 0, paddingBottom: 20, borderBottom: '1px solid #e2e8f0', flexWrap: 'wrap' }}>
         {/* Search bubble */}
         <div
           style={{
             flex: 1,
-            minWidth: 200,
+            minWidth: 180,
             display: 'flex',
             alignItems: 'center',
-            gap: 8,
+            gap: 6,
             background: '#fff',
             border: '1px solid #e2e8f0',
             borderRadius: 100,
-            padding: '8px 16px',
+            padding: '6px 14px',
             boxShadow: '0 1px 3px rgba(0,0,0,0.04)',
           }}
         >
-          <span style={{ color: '#a0aec0', fontSize: 14 }}>🔍</span>
+          <span style={{ color: '#a0aec0', fontSize: 12 }}>🔍</span>
           <input
             type="text"
             value={searchInput}
@@ -296,7 +339,7 @@ export function BooksLibraryPage() {
               flex: 1,
               border: 'none',
               outline: 'none',
-              fontSize: 14,
+              fontSize: 13,
               background: 'transparent',
               color: '#2d3748',
             }}
@@ -324,15 +367,13 @@ export function BooksLibraryPage() {
           value={sortIdx}
           onChange={(e) => setSortIdx(Number(e.target.value))}
           style={{
-            padding: '8px 14px',
-            background: '#fff',
-            border: '1px solid #e2e8f0',
-            borderRadius: 100,
+            padding: '6px 4px',
+            background: 'transparent',
+            border: 'none',
             fontSize: 13,
             color: '#4a5568',
             cursor: 'pointer',
             outline: 'none',
-            boxShadow: '0 1px 3px rgba(0,0,0,0.04)',
           }}
         >
           {SORT_OPTIONS.map((o, i) => (
@@ -345,6 +386,7 @@ export function BooksLibraryPage() {
       {is401 && (
         <div
           style={{
+            marginTop: 28,
             background: '#fffbeb',
             border: '1px solid #f6e05e',
             borderRadius: 10,
@@ -380,11 +422,22 @@ export function BooksLibraryPage() {
       )}
 
       {isLoading && (
-        <div style={{ textAlign: 'center', color: '#a0aec0', padding: 60 }}>Loading books…</div>
+        <div
+          style={{
+            marginTop: 28,
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))',
+            gap: 20,
+          }}
+        >
+          {Array.from({ length: 6 }).map((_, i) => (
+            <BookCardSkeleton key={i} />
+          ))}
+        </div>
       )}
 
       {isError && !is401 && (
-        <div style={{ background: '#fff5f5', color: '#c53030', padding: 16, borderRadius: 8 }}>
+        <div style={{ marginTop: 28, background: '#fff5f5', color: '#c53030', padding: 16, borderRadius: 8 }}>
           Failed to load books. Make sure the API server is running.
         </div>
       )}
@@ -399,6 +452,7 @@ export function BooksLibraryPage() {
         <>
           <div
             style={{
+              marginTop: 28,
               display: 'grid',
               gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))',
               gap: 20,

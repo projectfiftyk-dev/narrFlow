@@ -5,9 +5,13 @@ import com.bookplayer.orchestrator.domain.book.ContentParagraph;
 import com.bookplayer.orchestrator.domain.transformation.Transformation;
 import com.bookplayer.orchestrator.domain.transformation.TransformationStatus;
 import com.bookplayer.orchestrator.domain.transformation.TransformationVisibility;
+import com.bookplayer.orchestrator.domain.usage.UserDailyUsage;
+import com.bookplayer.orchestrator.repository.ContentRepository;
 import com.bookplayer.orchestrator.repository.TransformationRepository;
+import com.bookplayer.orchestrator.repository.UserDailyUsageRepository;
 import com.bookplayer.orchestrator.security.AuthenticatedUser;
 import com.bookplayer.orchestrator.services.book.BookService;
+import com.bookplayer.orchestrator.services.metrics.MetricService;
 import com.bookplayer.orchestrator.services.tts.TtsClient;
 import com.bookplayer.orchestrator.services.tts.TtsPollingService;
 import com.bookplayer.orchestrator.transfer.common.PagedResponse;
@@ -40,7 +44,10 @@ import java.util.stream.Collectors;
 public class TransformationServiceImpl implements TransformationService {
 
     private final TransformationRepository transformationRepository;
+    private final ContentRepository contentRepository;
+    private final UserDailyUsageRepository userDailyUsageRepository;
     private final BookService bookService;
+    private final MetricService metricService;
     private final TtsClient ttsClient;
     private final TtsPollingService ttsPollingService;
 
@@ -50,11 +57,13 @@ public class TransformationServiceImpl implements TransformationService {
         bookService.getBook(request.bookId());
 
         if (!user.isAdmin()) {
-            LocalDateTime startOfDay = LocalDate.now().atStartOfDay();
-            long countToday = transformationRepository.countByUserIdAndCreatedAtAfter(user.userId(), startOfDay);
-            if (countToday >= 1) {
+            String today = LocalDate.now().toString();
+            UserDailyUsage usage = userDailyUsageRepository
+                    .findByUserIdAndDate(user.userId(), today)
+                    .orElse(null);
+            if (usage != null && usage.getTransformationCount() >= 1) {
                 log.warn("User {} reached daily transformation limit", user.userId());
-                throw new ResponseStatusException(HttpStatus.TOO_MANY_REQUESTS,
+                throw new ResponseStatusException(HttpStatus.CONFLICT,
                         "Daily transformation limit reached. Only 1 transformation allowed per day.");
             }
         }
@@ -70,6 +79,20 @@ public class TransformationServiceImpl implements TransformationService {
                 .updatedAt(now)
                 .build();
         Transformation saved = transformationRepository.save(transformation);
+        metricService.recordTransformationCreated(saved.getId(), user.userId());
+
+        if (!user.isAdmin()) {
+            String today = LocalDate.now().toString();
+            UserDailyUsage usage = userDailyUsageRepository
+                    .findByUserIdAndDate(user.userId(), today)
+                    .orElseGet(() -> UserDailyUsage.builder()
+                            .userId(user.userId())
+                            .date(today)
+                            .transformationCount(0)
+                            .build());
+            usage.setTransformationCount(usage.getTransformationCount() + 1);
+            userDailyUsageRepository.save(usage);
+        }
         log.info("Transformation created: id={}", saved.getId());
         return saved;
     }
@@ -79,9 +102,10 @@ public class TransformationServiceImpl implements TransformationService {
         log.debug("Fetching transformation: {} user={}", transformationId, user != null ? user.userId() : "anonymous");
 
         if (user == null) {
-            // Anonymous: only public transformations are visible, return 404 otherwise
+            // Anonymous: only PUBLIC + DONE transformations are visible
             return transformationRepository.findById(transformationId)
-                    .filter(t -> t.getVisibility() == TransformationVisibility.PUBLIC)
+                    .filter(t -> t.getVisibility() == TransformationVisibility.PUBLIC
+                            && t.getStatus() == TransformationStatus.DONE)
                     .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND,
                             "Transformation not found: " + transformationId));
         }
@@ -90,10 +114,11 @@ public class TransformationServiceImpl implements TransformationService {
             return findByIdOrThrow(transformationId);
         }
 
-        // Authenticated user: own transformations or public, 404 otherwise (don't reveal existence)
+        // Authenticated user: own transformations always visible; public only when DONE
         return transformationRepository.findById(transformationId)
                 .filter(t -> t.getUserId().equals(user.userId())
-                        || t.getVisibility() == TransformationVisibility.PUBLIC)
+                        || (t.getVisibility() == TransformationVisibility.PUBLIC
+                                && t.getStatus() == TransformationStatus.DONE))
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND,
                         "Transformation not found: " + transformationId));
     }
@@ -104,8 +129,8 @@ public class TransformationServiceImpl implements TransformationService {
         Page<Transformation> page;
         if (user == null) {
             page = hasSearch
-                    ? transformationRepository.findByVisibilityAndNameContainingIgnoreCase(TransformationVisibility.PUBLIC, search.trim(), pageable)
-                    : transformationRepository.findByVisibility(TransformationVisibility.PUBLIC, pageable);
+                    ? transformationRepository.findByVisibilityAndStatusAndNameContainingIgnoreCase(TransformationVisibility.PUBLIC, TransformationStatus.DONE, search.trim(), pageable)
+                    : transformationRepository.findByVisibilityAndStatus(TransformationVisibility.PUBLIC, TransformationStatus.DONE, pageable);
             log.debug("Anonymous listed {} public transformations (search='{}')", page.getTotalElements(), search);
         } else if (user.isAdmin()) {
             page = hasSearch
@@ -114,8 +139,8 @@ public class TransformationServiceImpl implements TransformationService {
             log.debug("Admin listed {} transformations (search='{}')", page.getTotalElements(), search);
         } else {
             page = hasSearch
-                    ? transformationRepository.findVisibleToUserAndNameContaining(user.userId(), TransformationVisibility.PUBLIC, search.trim(), pageable)
-                    : transformationRepository.findVisibleToUser(user.userId(), TransformationVisibility.PUBLIC, pageable);
+                    ? transformationRepository.findVisibleToUserAndNameContaining(user.userId(), search.trim(), pageable)
+                    : transformationRepository.findVisibleToUser(user.userId(), pageable);
             log.debug("User {} listed {} transformations (search='{}')", user.userId(), page.getTotalElements(), search);
         }
         return new PagedResponse<>(page.getContent(), page.getNumber(), page.getSize(), page.getTotalElements());
@@ -214,6 +239,7 @@ public class TransformationServiceImpl implements TransformationService {
                         .segmentNumber(segmentNumber)
                         .text(paragraph.getText())
                         .voiceId(voiceId)
+                        .emotion(paragraph.getEmotion() != null ? paragraph.getEmotion().name() : null)
                         .transformationId(transformationId)
                         .build());
 
@@ -237,6 +263,17 @@ public class TransformationServiceImpl implements TransformationService {
 
         log.info("Generation started for transformation={}, ttsTaskId={}", transformationId, ttsTaskId);
         return new GenerateResponse(transformationId, TransformationStatus.GENERATING.name(), ttsTaskId);
+    }
+
+    @Override
+    public void deleteTransformation(String transformationId, AuthenticatedUser user) {
+        log.info("Deleting transformation={} requested by user={}", transformationId, user.userId());
+        Transformation transformation = findByIdOrThrow(transformationId);
+        assertOwnerOrAdmin(transformation, user);
+
+        contentRepository.deleteByTransformationId(transformationId);
+        transformationRepository.deleteById(transformationId);
+        log.info("Transformation {} deleted by user={}", transformationId, user.userId());
     }
 
     private Transformation findByIdOrThrow(String transformationId) {

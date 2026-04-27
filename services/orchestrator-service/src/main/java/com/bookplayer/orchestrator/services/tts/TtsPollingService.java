@@ -8,6 +8,7 @@ import com.bookplayer.orchestrator.domain.transformation.TransformationStatus;
 import com.bookplayer.orchestrator.repository.ContentRepository;
 import com.bookplayer.orchestrator.repository.TransformationRepository;
 import com.bookplayer.orchestrator.services.book.BookService;
+import com.bookplayer.orchestrator.services.metrics.MetricService;
 import com.bookplayer.orchestrator.transfer.tts.TtsContentResponse;
 import com.bookplayer.orchestrator.transfer.tts.TtsResolvedSegment;
 import com.bookplayer.orchestrator.transfer.tts.TtsTaskStatusResponse;
@@ -38,6 +39,7 @@ public class TtsPollingService {
     private final TransformationRepository transformationRepository;
     private final ContentRepository contentRepository;
     private final BookService bookService;
+    private final MetricService metricService;
 
     @Async("taskExecutor")
     public void pollUntilComplete(String transformationId, String ttsTaskId) {
@@ -108,6 +110,7 @@ public class TtsPollingService {
                         .text(seg.text())
                         .audioUri(seg.audioUrl())
                         .voiceId(voiceId)
+                        .emotion(seg.emotion())
                         .build());
             }
 
@@ -121,6 +124,7 @@ public class TtsPollingService {
             transformation.setStatus(TransformationStatus.DONE);
             transformation.setUpdatedAt(LocalDateTime.now());
             transformationRepository.save(transformation);
+            metricService.recordTransformationCompleted(transformationId);
 
             log.info("Transformation {} completed — {} content items assembled", transformationId, items.size());
         } catch (Exception e) {
@@ -136,5 +140,6 @@ public class TtsPollingService {
             t.setUpdatedAt(LocalDateTime.now());
             transformationRepository.save(t);
         });
+        metricService.recordTransformationFailed(transformationId);
     }
 }

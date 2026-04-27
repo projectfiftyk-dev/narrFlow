@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { fetchBooks, fetchBookSections } from '../api/books';
@@ -8,11 +8,25 @@ import {
   createTransformation,
   saveVoiceMapping,
   triggerGeneration,
+  deleteTransformation,
 } from '../api/transformations';
 import { PersonaSelector } from '../components/PersonaSelector';
 import { StatusBadge } from '../components/StatusBadge';
 import { useAppStore } from '../store/useAppStore';
 import { useRole } from '../features/auth/useRole';
+
+const GENERATING_TEXTS = [
+  "We're bringing your content to life, please wait…",
+  "Crafting each voice with care, just a moment…",
+  "Weaving words into sound, this won't take long…",
+  "Your story is finding its voice…",
+  "Breathing life into every paragraph…",
+  "The narrators are warming up…",
+  "Transforming text into an immersive experience…",
+  "Almost there — your audiobook is taking shape…",
+  "Each sentence is being lovingly rendered…",
+  "Good things take a moment — your audio is on its way…",
+];
 
 export function NewTransformationPage() {
   const navigate = useNavigate();
@@ -30,7 +44,8 @@ export function NewTransformationPage() {
   const [selectedBookId, setSelectedBookId] = useState<string>('');
   const [transformationId, setTransformationId] = useState<string | null>(resumeId);
   const [voiceMapping, setVoiceMapping] = useState<Record<string, string>>({});
-  const [saving, setSaving] = useState(false);
+  const [genTextIndex, setGenTextIndex] = useState(0);
+  const genTextTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     if (resumeId) setActiveTransformation(resumeId);
@@ -105,17 +120,6 @@ export function NewTransformationPage() {
     },
   });
 
-  const handleSave = async () => {
-    if (!transformationId) return;
-    setSaving(true);
-    try {
-      await saveVoiceMapping(transformationId, voiceMapping);
-      queryClient.invalidateQueries({ queryKey: ['transformation', transformationId] });
-    } finally {
-      setSaving(false);
-    }
-  };
-
   const generateMutation = useMutation({
     mutationFn: async () => {
       await saveVoiceMapping(transformationId!, voiceMapping);
@@ -126,11 +130,36 @@ export function NewTransformationPage() {
     },
   });
 
-  if (role === 'GUEST') return null;
+  const deleteMutation = useMutation({
+    mutationFn: () => deleteTransformation(transformationId!),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['transformations'] });
+      navigate('/transformations');
+    },
+  });
 
   const status = transformation?.status;
   const isGenerating = status === 'GENERATING';
   const isFailed = status === 'FAILED';
+  const showGenerating = generateMutation.isPending || isGenerating;
+
+  useEffect(() => {
+    if (!showGenerating) {
+      setGenTextIndex(0);
+      return;
+    }
+    const currentText = GENERATING_TEXTS[genTextIndex];
+    const duration = Math.max(2500, currentText.length * 65);
+    genTextTimer.current = setTimeout(
+      () => setGenTextIndex((i) => (i + 1) % GENERATING_TEXTS.length),
+      duration,
+    );
+    return () => {
+      if (genTextTimer.current) clearTimeout(genTextTimer.current);
+    };
+  }, [genTextIndex, showGenerating]);
+
+  if (role === 'GUEST') return null;
 
   return (
     <div style={{ maxWidth: 820, margin: '0 auto', padding: '40px 24px' }}>
@@ -172,7 +201,7 @@ export function NewTransformationPage() {
                 color: '#2d3748',
               }}
             >
-              <option value="">— choose a book —</option>
+              <option value="" disabled>Pick a book to transform…</option>
               {books.map((b) => (
                 <option key={b.id} value={b.id}>
                   {b.title}
@@ -239,8 +268,8 @@ export function NewTransformationPage() {
       )}
 
       {/* Step 2: Voice assignment */}
-      {transformationId && !isGenerating && !isFailed && (
-        <div>
+      {transformationId && !isFailed && (
+        <div style={{ opacity: showGenerating ? 0.45 : 1, pointerEvents: showGenerating ? 'none' : 'auto', transition: 'opacity 0.3s' }}>
           <h3 style={{ margin: '0 0 16px', color: '#2d3748', fontSize: 15 }}>
             2 · Assign Voices to Authors
           </h3>
@@ -292,40 +321,48 @@ export function NewTransformationPage() {
             ))}
 
           {uniqueAuthors.length > 0 && !voicesLoading && (
-            <div style={{ display: 'flex', gap: 12, marginTop: 20 }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 20, gap: 12, flexWrap: 'wrap' }}>
+              {/* Left: draft label + generate */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+                <span style={{ fontSize: 12, color: '#a0aec0', display: 'flex', alignItems: 'center', gap: 5 }}>
+                  <span style={{ fontSize: 14 }}>✓</span> Saved as draft
+                </span>
+                <button
+                  onClick={() => generateMutation.mutate()}
+                  disabled={!allAssigned || generateMutation.isPending}
+                  style={{
+                    padding: '10px 24px',
+                    background: allAssigned
+                      ? 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)'
+                      : '#e2e8f0',
+                    color: allAssigned ? '#fff' : '#a0aec0',
+                    border: 'none',
+                    borderRadius: 8,
+                    fontSize: 14,
+                    fontWeight: 600,
+                    cursor: allAssigned ? 'pointer' : 'not-allowed',
+                  }}
+                >
+                  {generateMutation.isPending ? 'Starting…' : 'Generate Audio'}
+                </button>
+              </div>
+
+              {/* Right: delete */}
               <button
-                onClick={handleSave}
-                disabled={saving}
+                onClick={() => deleteMutation.mutate()}
+                disabled={deleteMutation.isPending}
                 style={{
-                  padding: '10px 20px',
-                  background: '#edf2f7',
-                  color: '#4a5568',
-                  border: 'none',
+                  padding: '10px 18px',
+                  background: 'transparent',
+                  color: '#e53e3e',
+                  border: '1px solid #feb2b2',
                   borderRadius: 8,
                   fontSize: 14,
                   fontWeight: 600,
                   cursor: 'pointer',
                 }}
               >
-                {saving ? 'Saving…' : 'Save Draft'}
-              </button>
-              <button
-                onClick={() => generateMutation.mutate()}
-                disabled={!allAssigned || generateMutation.isPending}
-                style={{
-                  padding: '10px 24px',
-                  background: allAssigned
-                    ? 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)'
-                    : '#e2e8f0',
-                  color: allAssigned ? '#fff' : '#a0aec0',
-                  border: 'none',
-                  borderRadius: 8,
-                  fontSize: 14,
-                  fontWeight: 600,
-                  cursor: allAssigned ? 'pointer' : 'not-allowed',
-                }}
-              >
-                {generateMutation.isPending ? 'Starting…' : 'Generate Audio'}
+                {deleteMutation.isPending ? 'Deleting…' : 'Delete'}
               </button>
             </div>
           )}
@@ -338,25 +375,107 @@ export function NewTransformationPage() {
         </div>
       )}
 
-      {isGenerating && (
-        <div style={{ textAlign: 'center', padding: 60, color: '#4a5568' }}>
-          <div style={{ fontSize: 48, marginBottom: 16 }}>⏳</div>
-          <h3 style={{ margin: '0 0 8px' }}>Generating Audio…</h3>
-          <p style={{ margin: 0, color: '#a0aec0', fontSize: 14 }}>Checking every 3 seconds.</p>
+      {/* Step 3: Generating */}
+      {showGenerating && (
+        <div
+          style={{
+            marginTop: 32,
+            background: '#fff',
+            border: '1px solid #e2e8f0',
+            borderRadius: 10,
+            padding: '32px 28px',
+          }}
+        >
+          <h3 style={{ margin: '0 0 28px', color: '#2d3748', fontSize: 15 }}>
+            3 · Generating Audio
+          </h3>
+
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 28 }}>
+            {/* Three bouncing dots */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+              {[0, 0.18, 0.36].map((delay, i) => (
+                <div
+                  key={i}
+                  style={{
+                    width: 14,
+                    height: 14,
+                    borderRadius: '50%',
+                    background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+                    animation: 'dot-bounce 1.1s ease-in-out infinite',
+                    animationDelay: `${delay}s`,
+                  }}
+                />
+              ))}
+            </div>
+
+            {/* Rotating text */}
+            <p
+              key={genTextIndex}
+              style={{
+                margin: 0,
+                fontSize: 14,
+                color: '#4a5568',
+                textAlign: 'center',
+                maxWidth: 380,
+                animation: 'text-fade-in 0.45s ease both',
+              }}
+            >
+              {GENERATING_TEXTS[genTextIndex]}
+            </p>
+          </div>
         </div>
       )}
 
-      {isFailed && (
+      {isFailed && !generateMutation.isPending && (
         <div
           style={{
-            background: '#fff5f5',
-            color: '#c53030',
-            padding: 16,
-            borderRadius: 8,
-            marginTop: 16,
+            background: '#fff',
+            border: '1px solid #e2e8f0',
+            borderRadius: 10,
+            padding: '32px 28px',
+            marginTop: 32,
           }}
         >
-          Generation failed. Please try again or create a new transformation.
+          <h3 style={{ margin: '0 0 12px', color: '#2d3748', fontSize: 15 }}>
+            3 · Generating Audio
+          </h3>
+          <p style={{ margin: '0 0 24px', fontSize: 13, color: '#c53030' }}>
+            Generation failed. You can try again or delete this transformation.
+          </p>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 }}>
+            <button
+              onClick={() => generateMutation.mutate()}
+              disabled={generateMutation.isPending}
+              style={{
+                padding: '10px 24px',
+                background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+                color: '#fff',
+                border: 'none',
+                borderRadius: 8,
+                fontSize: 14,
+                fontWeight: 600,
+                cursor: 'pointer',
+              }}
+            >
+              {generateMutation.isPending ? 'Starting…' : 'Try Again'}
+            </button>
+            <button
+              onClick={() => deleteMutation.mutate()}
+              disabled={deleteMutation.isPending}
+              style={{
+                padding: '10px 18px',
+                background: 'transparent',
+                color: '#e53e3e',
+                border: '1px solid #feb2b2',
+                borderRadius: 8,
+                fontSize: 14,
+                fontWeight: 600,
+                cursor: 'pointer',
+              }}
+            >
+              {deleteMutation.isPending ? 'Deleting…' : 'Delete'}
+            </button>
+          </div>
         </div>
       )}
     </div>

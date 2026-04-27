@@ -10,7 +10,7 @@ spring:
 
 tts:
   service:
-    base-url: localhost:8081
+    base-url: http://localhost:8081
 
 auth:
   google:

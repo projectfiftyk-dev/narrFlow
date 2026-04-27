@@ -7,4 +7,5 @@ import java.util.Optional;
 
 public interface ContentRepository extends MongoRepository<Content, String> {
     Optional<Content> findByTransformationId(String transformationId);
+    void deleteByTransformationId(String transformationId);
 }

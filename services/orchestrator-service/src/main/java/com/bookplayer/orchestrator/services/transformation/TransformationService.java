@@ -16,4 +16,5 @@ public interface TransformationService {
     Transformation updateVoiceMapping(String transformationId, AuthenticatedUser user, UpdateVoiceMappingRequest request);
     Transformation updateVisibility(String transformationId, AuthenticatedUser user, UpdateVisibilityRequest request);
     GenerateResponse triggerGeneration(String transformationId, AuthenticatedUser user);
+    void deleteTransformation(String transformationId, AuthenticatedUser user);
 }

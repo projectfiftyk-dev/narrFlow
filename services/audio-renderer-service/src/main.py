@@ -8,6 +8,7 @@ from fastapi.staticfiles import StaticFiles
 from .config import settings
 from .controllers import tasks_controller, voices_controller
 from .database import close_db
+from .services.voice_samples import generate_voice_samples
 
 logging.basicConfig(level=logging.INFO)
 
@@ -16,6 +17,7 @@ os.makedirs(settings.AUDIO_STORAGE_PATH, exist_ok=True)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    await generate_voice_samples()
     yield
     await close_db()
 

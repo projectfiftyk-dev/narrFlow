@@ -15,5 +15,6 @@ public class TtsSegmentInput {
     private int segmentNumber;
     private String text;
     private String voiceId;
+    private String emotion; // null omitted from JSON; TTS service defaults to NEUTRAL
     private String transformationId;
 }

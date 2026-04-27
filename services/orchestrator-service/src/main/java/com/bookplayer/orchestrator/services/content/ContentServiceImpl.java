@@ -7,6 +7,7 @@ import com.bookplayer.orchestrator.domain.transformation.TransformationVisibilit
 import com.bookplayer.orchestrator.repository.ContentRepository;
 import com.bookplayer.orchestrator.repository.TransformationRepository;
 import com.bookplayer.orchestrator.security.AuthenticatedUser;
+import com.bookplayer.orchestrator.services.metrics.MetricService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
@@ -20,6 +21,7 @@ public class ContentServiceImpl implements ContentService {
 
     private final ContentRepository contentRepository;
     private final TransformationRepository transformationRepository;
+    private final MetricService metricService;
 
     @Override
     public Content getContent(String transformationId, AuthenticatedUser user) {
@@ -31,9 +33,10 @@ public class ContentServiceImpl implements ContentService {
                             "Transformation not found: " + transformationId);
                 });
 
-        boolean isPublic = transformation.getVisibility() == TransformationVisibility.PUBLIC;
         boolean isOwnerOrAdmin = user != null && (user.isAdmin() || transformation.getUserId().equals(user.userId()));
-        if (!isPublic && !isOwnerOrAdmin) {
+        boolean isPublicAndDone = transformation.getVisibility() == TransformationVisibility.PUBLIC
+                && transformation.getStatus() == TransformationStatus.DONE;
+        if (!isPublicAndDone && !isOwnerOrAdmin) {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND,
                     "Transformation not found: " + transformationId);
         }
@@ -44,11 +47,13 @@ public class ContentServiceImpl implements ContentService {
                     "Content not ready. Transformation status: " + transformation.getStatus());
         }
 
-        return contentRepository.findByTransformationId(transformationId)
+        Content content = contentRepository.findByTransformationId(transformationId)
                 .orElseThrow(() -> {
                     log.error("Content missing for completed transformation: {}", transformationId);
                     return new ResponseStatusException(HttpStatus.NOT_FOUND,
                             "Content not found for transformation: " + transformationId);
                 });
+        metricService.recordContentAccessed(transformationId, user != null ? user.userId() : null);
+        return content;
     }
 }

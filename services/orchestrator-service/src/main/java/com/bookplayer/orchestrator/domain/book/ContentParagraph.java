@@ -10,4 +10,5 @@ import lombok.NoArgsConstructor;
 public class ContentParagraph {
     private String text;
     private String author;
+    private SegmentEmotion emotion; // null means no emotion specified; TTS defaults to NEUTRAL
 }

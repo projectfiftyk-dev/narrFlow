@@ -16,4 +16,5 @@ public class ContentItem {
     private String text;
     private String audioUri;
     private String voiceId;
+    private String emotion; // null when the source paragraph had no emotion set
 }

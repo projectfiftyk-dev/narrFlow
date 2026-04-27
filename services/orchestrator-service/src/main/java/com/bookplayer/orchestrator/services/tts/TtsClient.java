@@ -3,6 +3,7 @@ package com.bookplayer.orchestrator.services.tts;
 import com.bookplayer.orchestrator.transfer.tts.*;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -27,6 +28,16 @@ public class TtsClient {
 
     @Value("${tts.service.base-url}")
     private String ttsBaseUrl;
+
+    @PostConstruct
+    void validateBaseUrl() {
+        URI uri = URI.create(ttsBaseUrl);
+        if (uri.getScheme() == null) {
+            throw new IllegalStateException(
+                    "tts.service.base-url must include a scheme (e.g. http://localhost:8081). Got: " + ttsBaseUrl);
+        }
+        log.info("TTS service base URL: {}", ttsBaseUrl);
+    }
 
     public String createTask(TtsTaskRequest request) {
         String url = ttsBaseUrl + "/tts/tasks";

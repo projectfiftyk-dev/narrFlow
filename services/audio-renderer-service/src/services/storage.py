@@ -22,3 +22,19 @@ def audio_file_path(task_id: str, segment_number: int) -> str:
 
 def audio_url(task_id: str, segment_number: int) -> str:
     return f"{settings.AUDIO_BASE_URL}/{task_id}/{segment_number}.mp3"
+
+
+def ensure_test_dir(voice_id: str, language: str) -> str:
+    path = os.path.join(settings.AUDIO_STORAGE_PATH, "tests", voice_id, language)
+    os.makedirs(path, exist_ok=True)
+    logger.debug("Ensured test directory: %s", path)
+    return path
+
+
+def test_audio_file_path(voice_id: str, language: str) -> str:
+    test_dir = ensure_test_dir(voice_id, language)
+    return os.path.join(test_dir, "sample.mp3")
+
+
+def test_audio_url(voice_id: str, language: str) -> str:
+    return f"{settings.AUDIO_BASE_URL}/tests/{voice_id}/{language}/sample.mp3"

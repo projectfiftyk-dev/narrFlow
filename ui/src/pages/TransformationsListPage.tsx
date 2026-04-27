@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import {
   fetchTransformations,
   updateVisibility,
+  deleteTransformation,
   type TransformationListParams,
 } from '../api/transformations';
 import { fetchBooks } from '../api/books';
@@ -15,8 +16,7 @@ import type { Transformation } from '../types';
 const GRADIENT = 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)';
 
 const SORT_OPTIONS = [
-  { label: 'Recently updated', sortBy: 'updatedAt' as const, sortDir: 'desc' as const },
-  { label: 'Recently created', sortBy: 'createdAt' as const, sortDir: 'desc' as const },
+  { label: 'Newest first', sortBy: 'createdAt' as const, sortDir: 'desc' as const },
   { label: 'Oldest first', sortBy: 'createdAt' as const, sortDir: 'asc' as const },
   { label: 'Name A–Z', sortBy: 'name' as const, sortDir: 'asc' as const },
   { label: 'Name Z–A', sortBy: 'name' as const, sortDir: 'desc' as const },
@@ -54,6 +54,129 @@ function VisibilityToggle({ transformation }: { transformation: Transformation }
     >
       {isPublic ? '🌐 Public' : '🔒 Private'}
     </button>
+  );
+}
+
+function TransformationCard({
+  transformation: t,
+  isActive,
+  bookTitle,
+  role,
+  onPlay,
+  onContinue,
+  onGoToPlayer,
+}: {
+  transformation: Transformation;
+  isActive: boolean;
+  bookTitle: string;
+  role: string;
+  onPlay: () => void;
+  onContinue: () => void;
+  onGoToPlayer: () => void;
+}) {
+  const queryClient = useQueryClient();
+
+  const deleteMutation = useMutation({
+    mutationFn: () => deleteTransformation(t.id),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['transformations'] }),
+  });
+
+  return (
+    <div
+      style={{
+        background: '#fff',
+        border: `2px solid ${isActive ? '#667eea' : '#e2e8f0'}`,
+        borderRadius: 10,
+        padding: '16px 20px',
+      }}
+    >
+      {/* Top row: title left · status + visibility right */}
+      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12, marginBottom: 4 }}>
+        <div style={{ minWidth: 0 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            {isActive && (
+              <span style={{ width: 7, height: 7, borderRadius: '50%', background: '#667eea', flexShrink: 0, marginTop: 1 }} />
+            )}
+            <span style={{ fontWeight: 700, color: '#1a202c', fontSize: 15, lineHeight: 1.3 }}>
+              {t.name || bookTitle}
+            </span>
+          </div>
+          <div style={{ color: '#a0aec0', fontSize: 12, marginTop: 3, paddingLeft: isActive ? 15 : 0 }}>
+            {t.name && <span style={{ marginRight: 4 }}>{bookTitle} ·</span>}
+            <span style={{ fontFamily: 'monospace' }}>{t.id.slice(-10)}</span>
+          </div>
+        </div>
+
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+          <StatusBadge status={t.status} />
+          {role !== 'GUEST' && t.visibility !== undefined && (
+            <VisibilityToggle transformation={t} />
+          )}
+        </div>
+      </div>
+
+      {/* Bottom row: primary action left · delete right */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 14, gap: 8 }}>
+        <div>
+          {t.status === 'DONE' ? (
+            <button
+              onClick={isActive ? onGoToPlayer : onPlay}
+              style={{
+                padding: '6px 16px',
+                background: GRADIENT,
+                color: '#fff',
+                border: 'none',
+                borderRadius: 6,
+                fontSize: 12,
+                fontWeight: 600,
+                cursor: 'pointer',
+                whiteSpace: 'nowrap',
+              }}
+            >
+              {isActive ? 'Go to Player' : 'Play'}
+            </button>
+          ) : role !== 'GUEST' ? (
+            <button
+              onClick={onContinue}
+              style={{
+                padding: '6px 16px',
+                background: '#fefcbf',
+                color: '#975a16',
+                border: '1px solid #f6e05e',
+                borderRadius: 6,
+                fontSize: 12,
+                fontWeight: 600,
+                cursor: 'pointer',
+                whiteSpace: 'nowrap',
+              }}
+            >
+              Continue
+            </button>
+          ) : null}
+        </div>
+
+        {role !== 'GUEST' && (
+          <button
+            onClick={() => deleteMutation.mutate()}
+            disabled={deleteMutation.isPending}
+            style={{
+              padding: '6px 14px',
+              background: 'transparent',
+              color: '#e53e3e',
+              border: '1px solid #feb2b2',
+              borderRadius: 6,
+              fontSize: 12,
+              fontWeight: 600,
+              cursor: deleteMutation.isPending ? 'not-allowed' : 'pointer',
+              opacity: deleteMutation.isPending ? 0.6 : 1,
+              whiteSpace: 'nowrap',
+            }}
+          >
+            {deleteMutation.isPending ? 'Deleting…' : 'Delete'}
+          </button>
+        )}
+      </div>
+    </div>
   );
 }
 
@@ -165,15 +288,13 @@ export function TransformationsListPage() {
           value={sortIdx}
           onChange={(e) => setSortIdx(Number(e.target.value))}
           style={{
-            padding: '8px 14px',
-            background: '#fff',
-            border: '1px solid #e2e8f0',
-            borderRadius: 100,
+            padding: '6px 4px',
+            background: 'transparent',
+            border: 'none',
             fontSize: 13,
             color: '#4a5568',
             cursor: 'pointer',
             outline: 'none',
-            boxShadow: '0 1px 3px rgba(0,0,0,0.04)',
           }}
         >
           {SORT_OPTIONS.map((o, i) => (
@@ -223,82 +344,20 @@ export function TransformationsListPage() {
       )}
 
       {transformations.length > 0 && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
           {transformations.map((t) => {
             const isActive = t.id === activeId;
             return (
-              <div
+              <TransformationCard
                 key={t.id}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 12,
-                  padding: '14px 18px',
-                  background: '#fff',
-                  border: `2px solid ${isActive ? '#667eea' : '#e2e8f0'}`,
-                  borderRadius: 10,
-                  flexWrap: 'wrap',
-                }}
-              >
-                {isActive && (
-                  <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#667eea', flexShrink: 0 }} />
-                )}
-
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontWeight: 600, color: '#2d3748', fontSize: 14, marginBottom: 2 }}>
-                    {t.name || bookTitle(t.bookId)}
-                  </div>
-                  <div style={{ color: '#a0aec0', fontSize: 12 }}>
-                    {t.name && books.length > 0 && (
-                      <span style={{ marginRight: 6 }}>{bookTitle(t.bookId)} · </span>
-                    )}
-                    <span style={{ fontFamily: 'monospace' }}>{t.id.slice(-10)}</span>
-                  </div>
-                </div>
-
-                <StatusBadge status={t.status} />
-
-                {/* Visibility toggle for authenticated owners */}
-                {role !== 'GUEST' && t.visibility !== undefined && (
-                  <VisibilityToggle transformation={t} />
-                )}
-
-                {t.status === 'DONE' ? (
-                  <button
-                    onClick={() => (isActive ? navigate('/player') : handlePlay(t.id))}
-                    style={{
-                      padding: '6px 14px',
-                      background: GRADIENT,
-                      color: '#fff',
-                      border: 'none',
-                      borderRadius: 6,
-                      fontSize: 12,
-                      fontWeight: 600,
-                      cursor: 'pointer',
-                      whiteSpace: 'nowrap',
-                    }}
-                  >
-                    {isActive ? 'Go to Player' : 'Play'}
-                  </button>
-                ) : role !== 'GUEST' ? (
-                  <button
-                    onClick={() => handleContinue(t.id)}
-                    style={{
-                      padding: '6px 14px',
-                      background: '#fefcbf',
-                      color: '#975a16',
-                      border: '1px solid #f6e05e',
-                      borderRadius: 6,
-                      fontSize: 12,
-                      fontWeight: 600,
-                      cursor: 'pointer',
-                      whiteSpace: 'nowrap',
-                    }}
-                  >
-                    Continue
-                  </button>
-                ) : null}
-              </div>
+                transformation={t}
+                isActive={isActive}
+                bookTitle={bookTitle(t.bookId)}
+                role={role}
+                onPlay={() => handlePlay(t.id)}
+                onContinue={() => handleContinue(t.id)}
+                onGoToPlayer={() => navigate('/player')}
+              />
             );
           })}
         </div>

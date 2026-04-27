@@ -166,23 +166,40 @@ export function PlayerPage() {
             <div style={{ fontSize: 48, marginBottom: 16 }}>✏️</div>
             <h2 style={{ margin: '0 0 8px', color: '#2d3748' }}>Not ready yet</h2>
             <p style={{ color: '#718096', fontSize: 14, marginBottom: 24 }}>
-              This transformation hasn&apos;t been generated. Go to New Transformation to continue.
+              Continue this transformation or start fresh with a new one.
             </p>
-            <button
-              onClick={() => navigate('/new-transformation')}
-              style={{
-                padding: '10px 20px',
-                background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-                color: '#fff',
-                border: 'none',
-                borderRadius: 8,
-                fontSize: 14,
-                fontWeight: 600,
-                cursor: 'pointer',
-              }}
-            >
-              Continue in New Transformation
-            </button>
+            <div style={{ display: 'flex', justifyContent: 'center', gap: 12, flexWrap: 'wrap' }}>
+              <button
+                onClick={() => navigate(`/new-transformation?resumeId=${activeId}`)}
+                style={{
+                  padding: '10px 20px',
+                  background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+                  color: '#fff',
+                  border: 'none',
+                  borderRadius: 8,
+                  fontSize: 14,
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                }}
+              >
+                Continue
+              </button>
+              <button
+                onClick={() => navigate('/new-transformation')}
+                style={{
+                  padding: '10px 20px',
+                  background: 'transparent',
+                  color: '#667eea',
+                  border: '1px solid #667eea',
+                  borderRadius: 8,
+                  fontSize: 14,
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                }}
+              >
+                New Transformation
+              </button>
+            </div>
           </>
         )}
       </div>

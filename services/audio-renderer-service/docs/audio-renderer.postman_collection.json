@@ -1,0 +1,220 @@
+{
+  "info": {
+    "name": "Audio Renderer Service",
+    "description": "All endpoints exposed by the audio-renderer-service. Set the `baseUrl` collection variable to the running instance (default: http://localhost:8001).",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:8001",
+      "type": "string"
+    },
+    {
+      "key": "taskId",
+      "value": "",
+      "type": "string",
+      "description": "Populated automatically by the 'Submit TTS Task' request script."
+    }
+  ],
+  "item": [
+    {
+      "name": "Health",
+      "item": [
+        {
+          "name": "Health Check",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/health",
+              "host": ["{{baseUrl}}"],
+              "path": ["health"]
+            },
+            "description": "Returns `{\"status\": \"ok\"}` when the service is running."
+          },
+          "response": [
+            {
+              "name": "200 OK",
+              "status": "OK",
+              "code": 200,
+              "body": "{\n  \"status\": \"ok\"\n}"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Voices",
+      "item": [
+        {
+          "name": "List Curated Voices",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/voices",
+              "host": ["{{baseUrl}}"],
+              "path": ["voices"]
+            },
+            "description": "Returns the 5 curated voices: Rachel, Lily, Adam, Antoni, Josh. Each voice includes a `tests` array with pre-generated sample URLs for each supported language (`en`, `ro`)."
+          },
+          "response": [
+            {
+              "name": "200 OK",
+              "status": "OK",
+              "code": 200,
+              "header": [{ "key": "Content-Type", "value": "application/json" }],
+              "body": "[\n  {\n    \"id\": \"EXAVITQu4vr4xnSDxMaL\",\n    \"slug\": \"sarah\",\n    \"friendlyName\": \"Sarah\",\n    \"description\": \"Soft, young adult female\",\n    \"tests\": [\n      { \"language\": \"en\", \"url\": \"/audio/tests/EXAVITQu4vr4xnSDxMaL/en/sample.mp3\" },\n      { \"language\": \"ro\", \"url\": \"/audio/tests/EXAVITQu4vr4xnSDxMaL/ro/sample.mp3\" }\n    ]\n  },\n  {\n    \"id\": \"pFZP5JQG7iQjIQuC4Bku\",\n    \"slug\": \"lily\",\n    \"friendlyName\": \"Lily\",\n    \"description\": \"Warm, expressive female\",\n    \"tests\": [\n      { \"language\": \"en\", \"url\": \"/audio/tests/pFZP5JQG7iQjIQuC4Bku/en/sample.mp3\" },\n      { \"language\": \"ro\", \"url\": \"/audio/tests/pFZP5JQG7iQjIQuC4Bku/ro/sample.mp3\" }\n    ]\n  }\n]"
+            }
+          ]
+        },
+      ]
+    },
+    {
+      "name": "TTS Tasks",
+      "item": [
+        {
+          "name": "Submit TTS Task",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "var json = pm.response.json();",
+                  "if (json.taskId) {",
+                  "    pm.collectionVariables.set('taskId', json.taskId);",
+                  "    console.log('taskId set to: ' + json.taskId);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "url": {
+              "raw": "{{baseUrl}}/tts/tasks",
+              "host": ["{{baseUrl}}"],
+              "path": ["tts", "tasks"]
+            },
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"segments\": [\n    {\n      \"segmentNumber\": 0,\n      \"text\": \"It was a dark and stormy night.\",\n      \"voiceId\": \"21m00Tcm4TlvDq8ikWAM\",\n      \"emotion\": \"ANGRY\",\n      \"personaId\": \"persona_abc\",\n      \"transformationId\": \"transform_001\"\n    },\n    {\n      \"segmentNumber\": 1,\n      \"text\": \"She whispered his name into the silence.\",\n      \"voiceId\": \"TxGEqnHWrfWFTfGW9XjX\",\n      \"emotion\": \"SAD\",\n      \"personaId\": \"persona_xyz\",\n      \"transformationId\": \"transform_001\"\n    }\n  ]\n}"
+            },
+            "description": "Submits a batch of text segments for audio synthesis. Returns `202 Accepted` immediately with a `taskId`. The test script automatically saves `taskId` to the collection variable so the poll and content requests below can use it.\n\n`emotion` is optional and defaults to `NEUTRAL`. Valid values: `NEUTRAL`, `HAPPY`, `SAD`, `ANGRY`, `FEARFUL`, `SURPRISED`."
+          },
+          "response": [
+            {
+              "name": "202 Accepted",
+              "status": "Accepted",
+              "code": 202,
+              "header": [{ "key": "Content-Type", "value": "application/json" }],
+              "body": "{\n  \"status\": \"accepted\",\n  \"taskId\": \"550e8400-e29b-41d4-a716-446655440000\"\n}"
+            }
+          ]
+        },
+        {
+          "name": "Poll Task Status",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/tts/tasks/{{taskId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["tts", "tasks", "{{taskId}}"]
+            },
+            "description": "Polls the processing status of a TTS task. The `taskId` collection variable is set automatically when you run 'Submit TTS Task'.\n\nPossible statuses: `PENDING`, `PROCESSING`, `COMPLETED`, `FAILED`."
+          },
+          "response": [
+            {
+              "name": "200 — PENDING / PROCESSING",
+              "status": "OK",
+              "code": 200,
+              "body": "{\n  \"taskId\": \"550e8400-e29b-41d4-a716-446655440000\",\n  \"status\": \"PROCESSING\"\n}"
+            },
+            {
+              "name": "200 — COMPLETED",
+              "status": "OK",
+              "code": 200,
+              "body": "{\n  \"taskId\": \"550e8400-e29b-41d4-a716-446655440000\",\n  \"status\": \"COMPLETED\",\n  \"result\": [\n    { \"segmentNumber\": 0, \"audioUrl\": \"/audio/550e8400-e29b-41d4-a716-446655440000/0.mp3\" },\n    { \"segmentNumber\": 1, \"audioUrl\": \"/audio/550e8400-e29b-41d4-a716-446655440000/1.mp3\" }\n  ]\n}"
+            },
+            {
+              "name": "200 — FAILED",
+              "status": "OK",
+              "code": 200,
+              "body": "{\n  \"taskId\": \"550e8400-e29b-41d4-a716-446655440000\",\n  \"status\": \"FAILED\",\n  \"error\": \"ElevenLabs API error: quota_exceeded\"\n}"
+            },
+            {
+              "name": "404 Not Found",
+              "status": "Not Found",
+              "code": 404,
+              "body": "{\n  \"detail\": \"Task not found.\"\n}"
+            }
+          ]
+        },
+        {
+          "name": "Get Task Content",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/tts/tasks/{{taskId}}/content",
+              "host": ["{{baseUrl}}"],
+              "path": ["tts", "tasks", "{{taskId}}", "content"]
+            },
+            "description": "Returns the fully resolved, playback-ready payload for a completed task — segments merged with their audio URLs and original metadata. If the task is not yet completed, returns the current status with `segments: null`."
+          },
+          "response": [
+            {
+              "name": "200 — COMPLETED",
+              "status": "OK",
+              "code": 200,
+              "body": "{\n  \"taskId\": \"550e8400-e29b-41d4-a716-446655440000\",\n  \"status\": \"COMPLETED\",\n  \"segments\": [\n    {\n      \"segmentNumber\": 0,\n      \"text\": \"It was a dark and stormy night.\",\n      \"personaId\": \"persona_abc\",\n      \"audioUrl\": \"/audio/550e8400-e29b-41d4-a716-446655440000/0.mp3\"\n    },\n    {\n      \"segmentNumber\": 1,\n      \"text\": \"She whispered his name into the silence.\",\n      \"personaId\": \"persona_xyz\",\n      \"audioUrl\": \"/audio/550e8400-e29b-41d4-a716-446655440000/1.mp3\"\n    }\n  ]\n}"
+            },
+            {
+              "name": "200 — Not Yet Completed",
+              "status": "OK",
+              "code": 200,
+              "body": "{\n  \"taskId\": \"550e8400-e29b-41d4-a716-446655440000\",\n  \"status\": \"PROCESSING\",\n  \"segments\": null\n}"
+            },
+            {
+              "name": "404 Not Found",
+              "status": "Not Found",
+              "code": 404,
+              "body": "{\n  \"detail\": \"Task not found.\"\n}"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Audio Files",
+      "item": [
+        {
+          "name": "Download Task Audio Segment",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/audio/{{taskId}}/0.mp3",
+              "host": ["{{baseUrl}}"],
+              "path": ["audio", "{{taskId}}", "0.mp3"]
+            },
+            "description": "Serves a generated task audio segment directly as `audio/mpeg`. Replace `0` with the desired `segmentNumber`. The `taskId` collection variable is set automatically when you run 'Submit TTS Task'."
+          },
+          "response": []
+        },
+        {
+          "name": "Download Voice Test Sample",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/audio/tests/EXAVITQu4vr4xnSDxMaL/en/sample.mp3",
+              "host": ["{{baseUrl}}"],
+              "path": ["audio", "tests", "EXAVITQu4vr4xnSDxMaL", "en", "sample.mp3"]
+            },
+            "description": "Serves a pre-generated voice test sample directly as `audio/mpeg`. Generated on startup for all 5 curated voices × 2 languages (en, ro).\n\nPath pattern: `/audio/tests/{voiceId}/{language}/sample.mp3`\n\nCurated voice IDs:\n- `EXAVITQu4vr4xnSDxMaL` — Sarah\n- `pFZP5JQG7iQjIQuC4Bku` — Lily\n- `pNInz6obpgDQGcFmaJgB` — Adam\n- `ErXwobaYiN019PkySvjV` — Antoni\n- `IKne3meq5aSn9XLyUdCD` — Charlie"
+          },
+          "response": []
+        }
+      ]
+    }
+  ]
+}
